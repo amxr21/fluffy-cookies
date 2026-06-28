@@ -1,0 +1,295 @@
+@import "tailwindcss";
+
+/* ------------------------------------------------------------------ */
+/*  Fluffy design tokens (Tailwind v4 CSS-first config)               */
+/*  Use as: text-navy, bg-beige, font-display, text-h1, text-body...  */
+/* ------------------------------------------------------------------ */
+@theme {
+  /* Brand palette (from fluffy-assets/colors.json) */
+  --color-navy: #2f468e;   /* primary — headings, buttons, links */
+  --color-beige: #fcefd6;  /* warm section backgrounds */
+  --color-brown: #5d3f28;  /* accent — captions, secondary text */
+  --color-white: #fefaf0;  /* page base (warm off-white) */
+  --color-black: #090d1b;  /* body text */
+
+  /* Typeface */
+  --font-display: var(--font-sour-gummy), system-ui, sans-serif;
+
+  /* ---- Unified type scale (responsive via clamp) ----
+     headings use the display font; tokens pair size + line-height. */
+  --text-h1: clamp(2.75rem, 6vw, 4.5rem);
+  --text-h1--line-height: 1.05;
+  --text-h2: clamp(2rem, 4.5vw, 3.25rem);
+  --text-h2--line-height: 1.1;
+  --text-h3: clamp(1.5rem, 3vw, 2.25rem);
+  --text-h3--line-height: 1.15;
+  --text-h4: clamp(1.25rem, 2vw, 1.5rem);
+  --text-h4--line-height: 1.2;
+
+  --text-body-lg: 1.25rem;
+  --text-body-lg--line-height: 1.7;
+  --text-body: 1.0625rem;
+  --text-body--line-height: 1.7;
+  --text-small: 0.875rem;
+  --text-small--line-height: 1.6;
+  --text-caption: 0.75rem;
+  --text-caption--line-height: 1.5;
+}
+
+/* Base element defaults so plain markup already looks "Fluffy" */
+@layer base {
+  body {
+    background-color: var(--color-white);
+    background-image: url("/images/bg.jpg");
+    background-size: 100% auto;
+    color: var(--color-black);
+    font-family: var(--font-display);
+  }
+
+  h1, h2, h3, h4 {
+    color: var(--color-navy);
+    font-weight: 500;
+    text-wrap: balance;
+  }
+  h1 { font-size: var(--text-h1); line-height: var(--text-h1--line-height); }
+  h2 { font-size: var(--text-h2); line-height: var(--text-h2--line-height); }
+  h3 { font-size: var(--text-h3); line-height: var(--text-h3--line-height); }
+  h4 { font-size: var(--text-h4); line-height: var(--text-h4--line-height); }
+
+  p {
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+  }
+
+  a { color: inherit; text-decoration: none; }
+}
+
+@layer components {
+  /* Soft shadow blob behind the hero cookie (PNG is transparent, so we
+     fake the drop shadow with a blurred radial ::before rather than a
+     box-shadow utility). */
+  .hero-cookie {
+    isolation: isolate; /* own stacking context so the shadow layers correctly */
+  }
+  .hero-cookie::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    bottom: -4%;
+    z-index: 0; /* behind the cookie, above the page background */
+    /* circular ground shadow that peeks out below the cookie */
+    width: 82%;
+    aspect-ratio: 1 / 1;
+    transform: translateX(-50%);
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.3);
+    filter: blur(14px);
+    pointer-events: none;
+  }
+
+  /* Kirby route-transition loader: the kirby silhouette (used as a mask)
+     fills from beige to navy on a loop. */
+  .kirby-loader {
+    display: block;
+    width: 96px;
+    height: 110px;
+    -webkit-mask: url("/icons/kirby.svg") no-repeat center / contain;
+    mask: url("/icons/kirby.svg") no-repeat center / contain;
+    background:
+      linear-gradient(to top, var(--color-navy) 50%, var(--color-beige) 50%)
+      bottom / 100% 200%;
+    animation: kirby-fill 1.1s ease-in-out infinite;
+  }
+
+  @keyframes kirby-fill {
+    0% {
+      background-position: top;
+    }
+    50% {
+      background-position: bottom;
+    }
+    100% {
+      background-position: top;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .kirby-loader {
+      animation: none;
+      background-position: bottom;
+    }
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Branded scrollbar — navy thumb in a warm beige track, soft        */
+/*  (not fully) rounded to match the Fluffy look.                     */
+/* ------------------------------------------------------------------ */
+
+/* Firefox */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-navy) var(--color-beige);
+}
+
+/* WebKit / Chromium */
+*::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+*::-webkit-scrollbar-track {
+  background-color: var(--color-beige);
+  border-radius: 8px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--color-navy);
+  border-radius: 8px;
+  /* beige inset border makes the thumb read as a rounded pill inside the track */
+  border: 3px solid var(--color-beige);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-brown);
+}
+
+*::-webkit-scrollbar-corner {
+  background-color: var(--color-beige);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Navbar links — smooth color fade + an underline that grows from    */
+/*  the left on hover and for the active route.                        */
+/* ------------------------------------------------------------------ */
+.nav-link {
+  position: relative;
+  transition: color 0.35s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.nav-link::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -6px;
+  height: 2px;
+  width: 100%;
+  border-radius: 2px;
+  background-color: var(--color-navy);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.35s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.nav-link:hover::after,
+.nav-link.is-active::after {
+  transform: scaleX(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-link,
+  .nav-link::after {
+    transition: none;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Product depth — soft glow halo behind the meal + a ground shadow   */
+/*  beneath it, so the (transparent) food image reads with dimension.  */
+/* ------------------------------------------------------------------ */
+.product-depth::before {
+  /* warm radial glow behind the food */
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  z-index: 0;
+  width: 78%;
+  aspect-ratio: 1 / 1;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at center,
+    rgba(252, 239, 214, 0.95) 0%,
+    rgba(252, 239, 214, 0.35) 45%,
+    rgba(252, 239, 214, 0) 70%
+  );
+  filter: blur(6px);
+  pointer-events: none;
+}
+
+.product-depth::after {
+  /* soft ground shadow under the food */
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 4%;
+  z-index: 0;
+  width: 62%;
+  height: 14%;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(9, 13, 27, 0.68) 0%,
+    rgba(9, 13, 27, 0) 72%
+  );
+  filter: blur(8px);
+  pointer-events: none;
+  transition: width 0.5s ease, opacity 0.5s ease;
+}
+
+/* on hover the food lifts (scale-110) — widen & soften the shadow to match */
+.group:hover .product-depth::after {
+  width: 70%;
+  opacity: 0.85;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Form controls — smooth, interactive defaults for selects/inputs.   */
+/* ------------------------------------------------------------------ */
+
+/* rotate the custom chevron while the select is focused/open */
+.fluffy-select:focus + svg {
+  transform: translateY(-50%) rotate(180deg);
+}
+
+/* themed option list where the browser allows it */
+.fluffy-select option {
+  color: var(--color-black);
+  background-color: var(--color-white);
+}
+
+/* base text inputs / textareas (for future forms) */
+.fluffy-field {
+  border: 1px solid color-mix(in srgb, var(--color-navy) 30%, transparent);
+  background-color: #fff;
+  color: var(--color-navy);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  outline: none;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    background-color 0.2s ease;
+}
+.fluffy-field::placeholder {
+  color: color-mix(in srgb, var(--color-navy) 45%, transparent);
+}
+.fluffy-field:hover {
+  border-color: color-mix(in srgb, var(--color-navy) 55%, transparent);
+}
+.fluffy-field:focus-visible {
+  border-color: var(--color-navy);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-navy) 22%, transparent);
+}
+
+/* quantity counter value pop */
+@keyframes qty-pop {
+  0% { transform: scale(0.7); opacity: 0.4; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .min-w-7[class*="qty-pop"] { animation: none; }
+}

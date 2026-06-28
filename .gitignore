@@ -1,0 +1,39 @@
+# dependencies
+node_modules/
+**/node_modules/
+
+# next.js
+**/.next/
+**/out/
+
+# env (keep .env.example)
+.env
+.env.*
+!.env.example
+!**/.env.example
+
+# logs
+**/logs/
+*.log
+
+# process / blueprint / design docs — NEVER commit (expose how things work)
+docs/
+**/BACKEND-BLUEPRINT.md
+**/STOREFRONT-TEMPLATE.md
+**/SETUP_PLAN.md
+**/PROJECT-STANDARD*.md
+BACKEND-BLUEPRINT.md
+STOREFRONT-TEMPLATE.md
+SETUP_PLAN.md
+
+# design assets (raw source comps)
+fluffy-assets/
+
+# os / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# misc
+*.tsbuildinfo

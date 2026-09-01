@@ -1,0 +1,34 @@
+packages:
+  - 'frontend'
+  - 'backend'
+
+# ─── Supply-chain: minimum release age ──────────────────────────────────────
+# Refuse to install any package published less than this many minutes ago.
+# Defends against the hijacked-maintainer attack: a compromised account
+# publishes a malicious version, bots auto-merge it within minutes, and it is in
+# production before anyone notices. Waiting a day gives npm/GitHub/researchers a
+# window to yank it first.
+#
+# STATED EXPLICITLY ON PURPOSE. pnpm 10 defaulted this to 0; pnpm 11 defaults it
+# to 1440. Relying on the default means a pnpm upgrade silently changes the
+# project's security posture — and silently breaks CI.
+#
+# KEEP IN SYNC with `cooldown.default-days` in .github/dependabot.yml, which is
+# set to 3 days — comfortably above this floor, so Dependabot never proposes a
+# version pnpm would then refuse to install.
+minimumReleaseAge: 1440
+
+# pnpm blocks dependency postinstall scripts by default (supply-chain hardening).
+# Each package below is explicitly allowed because it cannot work without its
+# build step — both fetch or compile a platform-specific binary:
+#
+#   sharp          → native image library behind next/image optimisation
+#   unrs-resolver  → native module resolver used by eslint-plugin-import
+#   esbuild        → the bundler binary Vitest uses to transform test files
+#
+# Adding an entry here is a security decision. Do not set one to true just to
+# silence a warning — check what the script actually does first.
+allowBuilds:
+  esbuild: true
+  sharp: true
+  unrs-resolver: true

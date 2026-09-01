@@ -1,0 +1,177 @@
+# Fluffy — Continuous Integration
+#
+# Runs on every pull request. Blocks the merge if any required check fails.
+# Kept fast (~3-4 min) by running the jobs in parallel.
+#
+# If a check fails, click into it — the failing step shows the error inline.
+#
+# NOTE ON LAYOUT: this is a pnpm WORKSPACE with a single root lockfile. Every
+# job installs once at the root with --frozen-lockfile, then targets a package
+# with --filter. Do not add per-package `pnpm install` steps — there are no
+# per-package lockfiles, and --frozen-lockfile would fail.
+#
+# DEPLOYMENT-AGNOSTIC ON PURPOSE: nothing here knows or cares where the app is
+# hosted. Lint, typecheck, test and build are true of the code regardless of
+# what serves it, so changing hosting never means rewriting CI.
+
+name: CI
+
+on:
+  # NO `branches:` filter on pull_request, deliberately.
+  #
+  # `branches` filters by the TARGET branch. Restricting it to [main, dev] means
+  # a STACKED pull request — feat/b targeting feat/a rather than dev — never
+  # runs CI at all. It shows only third-party checks and reads as "mostly green"
+  # while being completely unverified.
+  pull_request:
+
+  # Pushes stay filtered. These runs keep the branch-protection status current
+  # on the long-lived branches; running on every feature-branch push would just
+  # duplicate the PR run.
+  push:
+    branches: [main, dev]
+
+# Cancel older runs on the same branch when a new push arrives.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: 22
+
+jobs:
+  # ─── Frontend ────────────────────────────────────────────────────
+
+  frontend-lint:
+    name: Frontend · Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter ./frontend lint
+
+  frontend-typecheck:
+    name: Frontend · Typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter ./frontend typecheck
+
+  frontend-test:
+    name: Frontend · Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter ./frontend test
+
+  frontend-build:
+    name: Frontend · Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build
+        # Dummy build-time env. The real values live in the host's dashboard;
+        # these exist only so the build can resolve `process.env` references.
+        #
+        # The API URL is deliberately unreachable: a build that silently depends
+        # on a live API at build time would pass here and fail on deploy. If the
+        # build needs data, it must handle the fetch failing.
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:9999/api/v1
+          NEXT_PUBLIC_GOOGLE_CLIENT_ID: ci-dummy.apps.googleusercontent.com
+        run: pnpm --filter ./frontend build
+
+  # ─── Backend ─────────────────────────────────────────────────────
+
+  backend-lint:
+    name: Backend · Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter ./backend lint
+
+  backend-test:
+    name: Backend · Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Test
+        # USE_FILE_DATA routes every repository call to the in-memory store, so
+        # the suite needs no MySQL service container. That is the whole point of
+        # the repo seam — see backend/repo.js.
+        env:
+          USE_FILE_DATA: 'true'
+          JWT_SECRET: ci-only-secret-never-used-in-production
+          GOOGLE_CLIENT_ID: ci-dummy.apps.googleusercontent.com
+          LOG_CONSOLE: 'false'
+        run: pnpm --filter ./backend test
+
+  # ─── Aggregate gate ──────────────────────────────────────────────
+  #
+  # This is the ONE check to mark as required in branch protection. Adding a
+  # job above automatically tightens the gate; the protection rule never needs
+  # editing, and it can't drift out of sync with the job list.
+
+  ci-passed:
+    name: CI passed
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    needs:
+      - frontend-lint
+      - frontend-typecheck
+      - frontend-test
+      - frontend-build
+      - backend-lint
+      - backend-test
+    # `always()` so this still runs when a dependency failed — otherwise it
+    # would be skipped, and a skipped required check blocks the PR forever.
+    if: always()
+    steps:
+      - name: Verify all required jobs passed
+        run: |
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then
+            echo "One or more required jobs failed"
+            exit 1
+          fi
+          echo "All required jobs passed"

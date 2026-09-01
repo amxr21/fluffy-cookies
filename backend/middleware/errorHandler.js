@@ -13,7 +13,8 @@ const notFoundHandler = (req, _res, next) => {
   next(notFound(`Route not found: ${req.method} ${req.originalUrl}`));
 };
 
-// eslint-disable-next-line no-unused-vars -- Express requires the 4-arg signature
+// Express identifies an error handler by its 4-argument signature — `_next`
+// must stay even though it is unused.
 const errorHandler = (err, req, res, _next) => {
   const isApp = err instanceof AppError;
   const status = isApp ? err.status : 500;

@@ -1,0 +1,7 @@
+# Fluffy — code ownership
+#
+# Solo project today. This exists so the file is in place the moment a second
+# person joins; GitHub ignores CODEOWNERS review requirements when no rule
+# requires approval, which matches the current branch protection (0 approvals).
+
+* @amxr21

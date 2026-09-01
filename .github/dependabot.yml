@@ -1,0 +1,58 @@
+# Dependency updates.
+#
+# ─── THE pnpm 11 TRAP ────────────────────────────────────────────────
+# pnpm 11 defaults `minimumReleaseAge` to 1440 minutes and REFUSES to install a
+# package published more recently than that. Dependabot, left alone, proposes
+# versions minutes after release — so every CI job on its PRs dies with
+# ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION.
+#
+# `cooldown` below is the fix: wait 3 days before proposing anything, which is
+# comfortably above pnpm-workspace.yaml's 1440-minute floor. KEEP THE TWO IN
+# SYNC — raising the pnpm floor above 3 days silently breaks Dependabot again.
+
+version: 2
+
+updates:
+  # ONE entry for the whole workspace. This is a pnpm workspace with a single
+  # root lockfile; per-package entries would each try to resolve a lockfile that
+  # does not exist.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Asia/Dubai
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 3
+    groups:
+      # Grouped so one PR covers a whole family rather than five separate ones.
+      #
+      # EVERY group sets update-types explicitly. Without it, a group happily
+      # bundles MAJOR bumps together — and a single PR carrying TypeScript 5→7
+      # plus ESLint 9→10 cannot be partially accepted, so the whole thing gets
+      # closed and nothing updates.
+      next:
+        patterns: ['next', 'eslint-config-next', '@next/*']
+        update-types: [minor, patch]
+      react:
+        patterns: ['react', 'react-dom', '@types/react', '@types/react-dom']
+        update-types: [minor, patch]
+      testing:
+        patterns: ['vitest', '@vitest/*', '@testing-library/*', 'jsdom', 'supertest']
+        update-types: [minor, patch]
+      linting:
+        patterns: ['eslint', '@eslint/*', 'lint-staged', 'husky']
+        update-types: [minor, patch]
+      backend:
+        patterns: ['express', 'mysql2', 'zod', 'helmet', 'cors', 'winston*', 'jsonwebtoken']
+        update-types: [minor, patch]
+
+  # Keep the Actions themselves current — a pinned v3 action eventually stops
+  # getting security fixes.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3

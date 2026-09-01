@@ -1,0 +1,3 @@
+# Runs on every `git commit`. Fast checks only — lint + format on STAGED files.
+# Full tests are too slow here; those live in pre-push and CI.
+pnpm exec lint-staged

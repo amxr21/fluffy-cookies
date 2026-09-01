@@ -1,0 +1,7 @@
+# Runs on every `git push`. Slower than pre-commit, still fast enough to keep.
+#
+# Catches the two failures that otherwise burn a full CI round-trip: a type
+# error, and a broken test. Both are cheap to check locally and expensive to
+# discover five minutes into a pipeline.
+pnpm typecheck || exit 1
+pnpm test || exit 1

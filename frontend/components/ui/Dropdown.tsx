@@ -4,7 +4,14 @@ import { useEffect, useId, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
-export type DropdownOption = { value: string; label: string };
+export type DropdownOption = {
+  value: string;
+  label: string;
+  /** Rendered greyed out and not selectable (e.g. "coming soon"). */
+  disabled?: boolean;
+  /** Short reason shown beside the label when disabled. */
+  note?: string;
+};
 
 type DropdownProps = {
   value: string;
@@ -52,8 +59,17 @@ export function Dropdown({
   }, [open]);
 
   const choose = (v: string) => {
+    if (options.find((o) => o.value === v)?.disabled) return;
     onChange(v);
     setOpen(false);
+  };
+
+  /** Next selectable index in `dir`, skipping disabled options. */
+  const step = (from: number, dir: 1 | -1) => {
+    for (let i = from + dir; i >= 0 && i < options.length; i += dir) {
+      if (!options[i].disabled) return i;
+    }
+    return from;
   };
 
   const onButtonKey = (e: React.KeyboardEvent) => {
@@ -61,15 +77,16 @@ export function Dropdown({
       e.preventDefault();
       if (!open) {
         setOpen(true);
-        setActive(Math.max(0, options.findIndex((o) => o.value === value)));
+        const current = options.findIndex((o) => o.value === value);
+        setActive(Math.max(0, current));
       } else if (e.key === "Enter" || e.key === " ") {
         choose(options[active].value);
       } else {
-        setActive((i) => Math.min(options.length - 1, i + 1));
+        setActive((i) => step(i, 1));
       }
     } else if (e.key === "ArrowUp" && open) {
       e.preventDefault();
-      setActive((i) => Math.max(0, i - 1));
+      setActive((i) => step(i, -1));
     }
   };
 
@@ -124,18 +141,33 @@ export function Dropdown({
         {options.map((opt, i) => {
           const isSelected = opt.value === value;
           return (
-            <li key={opt.value} role="option" aria-selected={isSelected}>
+            <li
+              key={opt.value}
+              role="option"
+              aria-selected={isSelected}
+              aria-disabled={opt.disabled || undefined}
+            >
               <button
                 type="button"
-                onMouseEnter={() => setActive(i)}
+                disabled={opt.disabled}
+                onMouseEnter={() => !opt.disabled && setActive(i)}
                 onClick={() => choose(opt.value)}
                 className={cn(
-                  "w-full rounded-lg px-3 py-1.5 text-left text-small font-medium transition-colors duration-150",
-                  isSelected ? "text-navy" : "text-navy/70",
-                  active === i ? "bg-navy/10" : "hover:bg-navy/5"
+                  "flex w-full items-center justify-between gap-3 rounded-lg px-3 py-1.5 text-left text-small font-medium transition-colors duration-150",
+                  opt.disabled
+                    ? "cursor-not-allowed text-navy/30"
+                    : isSelected
+                      ? "text-navy"
+                      : "text-navy/70",
+                  !opt.disabled && (active === i ? "bg-navy/10" : "hover:bg-navy/5")
                 )}
               >
-                {opt.label}
+                <span>{opt.label}</span>
+                {opt.note && (
+                  <span className="shrink-0 rounded-full bg-navy/10 px-2 py-0.5 text-caption font-semibold text-navy/50">
+                    {opt.note}
+                  </span>
+                )}
               </button>
             </li>
           );

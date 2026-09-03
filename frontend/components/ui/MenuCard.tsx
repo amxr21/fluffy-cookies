@@ -13,6 +13,7 @@ export function MenuCard({ item }: { item: MenuItem }) {
   const handleOrder = () =>
     addToCart({
       id: item.id,
+      productId: item.productId,
       name: item.name,
       description: item.description,
       price: item.price,

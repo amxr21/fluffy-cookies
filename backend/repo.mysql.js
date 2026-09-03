@@ -41,8 +41,12 @@ async function findProductById(id) {
 }
 
 // --- cart ---
+// `productId` mirrors the file repo and the storefront's CartLine — it is the
+// value the client must send back on cart/order writes. (The products table has
+// no slug column, so `id` stays numeric here; the client keys off productId.)
 const CART_SELECT = `
-  SELECT p.id AS id, ci.product_id, p.name, p.description, p.price, p.image, ci.quantity
+  SELECT p.id AS id, p.id AS productId, ci.product_id, p.name, p.description,
+         p.price, p.image, ci.quantity
   FROM cart_items ci JOIN products p ON p.id = ci.product_id
   WHERE ci.user_id = ?`;
 

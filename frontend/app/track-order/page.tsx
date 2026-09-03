@@ -4,8 +4,10 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Container } from "@/components/ui/Container";
+import { Input } from "@/components/ui/Field";
 import { StatusState } from "@/components/ui/StatusState";
 import { OrderCard } from "@/components/order/OrderCard";
+import { OrderProgress } from "@/components/order/OrderProgress";
 import { getJSON } from "@/lib/safeFetch";
 import type { Order } from "@/lib/orders";
 
@@ -45,32 +47,39 @@ export default function TrackOrderPage() {
           onSubmit={handleTrack}
           className="mx-auto flex max-w-md flex-wrap items-end gap-3"
         >
-          <label className="flex flex-1 flex-col gap-1 text-small text-navy/80">
-            Order number
-            <input
-              className="fluffy-field"
-              placeholder="e.g. FL12345"
-              value={number}
-              onChange={(e) => setNumber(e.target.value)}
-            />
-          </label>
+          <Input
+            label="Order number"
+            required
+            className="flex-1"
+            placeholder="e.g. FL1001"
+            autoCapitalize="characters"
+            hint="Starts with FL — it's on your confirmation."
+            error={state === "notfound" ? "We couldn't find that order." : undefined}
+            value={number}
+            onChange={(e) => setNumber(e.target.value)}
+          />
           <Button type="submit" disabled={state === "loading"}>
             {state === "loading" ? "Tracking…" : "Track"}
           </Button>
         </form>
 
-        <div className="mx-auto mt-10 max-w-md">
+        {/* Widen once a result is in — the 4-phase timeline is cramped at max-w-md. */}
+        <div
+          className={
+            state === "found"
+              ? "mx-auto mt-10 max-w-2xl"
+              : "mx-auto mt-10 max-w-md"
+          }
+        >
           {state === "loading" && (
             <StatusState variant="loading" title="Looking up your order…" />
           )}
-          {state === "notfound" && (
-            <StatusState
-              variant="error"
-              title="Order not found"
-              message="Double-check the reference number and try again."
-            />
+          {state === "found" && order && (
+            <div className="space-y-6">
+              <OrderProgress status={order.status} />
+              <OrderCard order={order} />
+            </div>
           )}
-          {state === "found" && order && <OrderCard order={order} />}
         </div>
       </Container>
     </main>

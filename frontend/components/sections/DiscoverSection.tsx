@@ -3,14 +3,15 @@ import { FiArrowRight } from "react-icons/fi";
 
 import { Container } from "@/components/ui/Container";
 import { ProductCard } from "@/components/ui/ProductCard";
+import { Reveal } from "@/components/ui/Reveal";
 import { COLLECTION } from "@/lib/products";
 
 export function DiscoverSection() {
   return (
     <section>
-      <Container className="py-16 md:py-24 md:px-32">
+      <Container className="py-16 md:px-32 md:py-24">
         {/* heading row */}
-        <div className="flex items-start justify-between gap-6">
+        <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h2 className="text-h2 font-bold text-navy">Discover the Collection</h2>
             <p className="mt-2 max-w-2xl text-body text-navy/70">
@@ -18,23 +19,26 @@ export function DiscoverSection() {
             </p>
           </div>
 
-          {/* explore more — soft-rounded per brand rule */}
+          {/* explore more — soft-rounded per brand rule.
+              Carries a visible label so it is not an unnamed icon link. */}
           <Link
             href="/menu"
-            className="grid size-20 shrink-0 place-items-center rounded-2xl border border-navy/30 text-center text-caption text-navy transition-colors hover:bg-navy/5"
+            className="inline-flex shrink-0 items-center gap-2 self-start rounded-2xl border border-navy/30 px-5 py-3 text-small text-navy transition-colors hover:bg-navy/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy"
           >
-            <span className="flex flex-col items-center leading-tight">
-              <FiArrowRight className="mt-1 text-lg" />
-            </span>
+            View full menu
+            <FiArrowRight aria-hidden className="text-lg" />
           </Link>
         </div>
 
         {/* cards */}
-        <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        <Reveal
+          stagger
+          className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-4"
+        >
           {COLLECTION.map((item) => (
             <ProductCard key={item.id} item={item} />
           ))}
-        </div>
+        </Reveal>
       </Container>
     </section>
   );

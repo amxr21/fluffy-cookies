@@ -4,6 +4,7 @@ import {
   FeaturesSection,
   HeroSection,
   PromoSection,
+  SpecialCTABanner,
   StorySection,
 } from "@/components/sections";
 
@@ -16,6 +17,7 @@ export default function Home() {
       <CollageSection />
       <FeaturesSection />
       <PromoSection />
+      <SpecialCTABanner />
     </main>
   );
 }

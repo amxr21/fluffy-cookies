@@ -240,6 +240,16 @@ html {
   transition: width 0.5s ease, opacity 0.5s ease;
 }
 
+/* The hero art starts `invisible` so GSAP can fade it in from a clean state.
+   Reduced-motion users get it revealed immediately by CSS, covering the
+   pre-hydration frame as well; a <noscript> rule in the layout covers the
+   case where JS never runs at all. */
+@media (prefers-reduced-motion: reduce) {
+  [data-hero] {
+    visibility: visible !important;
+  }
+}
+
 /* on hover the food lifts (scale-110) — widen & soften the shadow to match */
 .group:hover .product-depth::after {
   width: 70%;
@@ -261,7 +271,8 @@ html {
   background-color: var(--color-white);
 }
 
-/* base text inputs / textareas (for future forms) */
+/* Legacy base input styling. New fields should use components/ui/Field.tsx
+   (Input / Textarea), which owns label, hint, error and focus states. */
 .fluffy-field {
   border: 1px solid color-mix(in srgb, var(--color-navy) 30%, transparent);
   background-color: #fff;

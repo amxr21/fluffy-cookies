@@ -42,25 +42,31 @@ const FEATURES: Feature[] = [
 function FeatureRow({ title, description, icon, bg, align }: Feature) {
   const Icon = (
     <div className="flex shrink-0 items-center gap-6">
-      <Image src={icon} alt="" width={72} height={72} className="size-16" />
-      <span className="h-16 w-px bg-navy/40" />
+      <Image src={icon} alt="" aria-hidden width={72} height={72} className="size-16" />
+      <span aria-hidden className="hidden h-16 w-px bg-navy/40 sm:block" />
     </div>
   );
 
   const Text = (
-    <div className={align === "right" ? "text-right" : "text-left"}>
+    <div className={align === "right" ? "sm:text-right" : "text-left"}>
       <h3 className="text-h3 font-bold text-navy">{title}</h3>
       <p className="mt-1 max-w-2xl text-body text-navy/80">{description}</p>
     </div>
   );
 
   return (
-    <div className="relative overflow-hidden h-fit">
+    <div className="relative h-fit overflow-hidden">
       {/* faded photo background */}
-      <Image src={bg} alt="" fill className="object-cover" />
-      <div className="absolute inset-0 bg-beige/85" />
+      <Image src={bg} alt="" aria-hidden fill sizes="100vw" className="object-cover" />
+      <div aria-hidden className="absolute inset-0 bg-beige/85" />
 
-      <Container className="relative flex items-center gap-8 py-10 md:py-12">
+      {/* `justify-between` on the right-aligned rows replaces the old empty
+          spacer div; below `sm` both variants stack icon-over-text. */}
+      <Container
+        className={`relative flex flex-col items-start gap-6 py-10 sm:flex-row sm:items-center sm:gap-8 md:py-12 ${
+          align === "right" ? "sm:justify-between" : ""
+        }`}
+      >
         {align === "left" ? (
           <>
             {Icon}
@@ -68,11 +74,10 @@ function FeatureRow({ title, description, icon, bg, align }: Feature) {
           </>
         ) : (
           <>
-            <div className="ml-auto" />
             {Text}
             <div className="flex shrink-0 items-center gap-6">
-              <span className="h-16 w-px bg-navy/40" />
-              <Image src={icon} alt="" width={72} height={72} className="size-16" />
+              <span aria-hidden className="hidden h-16 w-px bg-navy/40 sm:block" />
+              <Image src={icon} alt="" aria-hidden width={72} height={72} className="size-16" />
             </div>
           </>
         )}

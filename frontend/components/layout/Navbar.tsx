@@ -17,8 +17,8 @@ export function Navbar() {
     href === "/" ? pathname === "/" : pathname.startsWith(href);
 
   return (
-    <header className="fixed inset-x-4 top-4 mx-auto rounded-2xl border border-navy/10 bg-white/70 shadow-lg shadow-navy/5 backdrop-blur-md md:inset-x-16 md:top-6 z-99999999">
-      <nav className="flex items-center justify-between px-16 py-3">
+    <header className="fixed inset-x-4 top-4 mx-auto rounded-2xl border border-navy/10 bg-white/70 shadow-lg shadow-navy/5 backdrop-blur-md md:inset-x-16 md:top-6 z-50">
+      <nav className="flex items-center justify-between px-4 py-3 sm:px-8 md:px-16">
         {/* Brand */}
         <Link href="/" aria-label={`${SITE.name} — home`} className="shrink-0">
           <Image
@@ -58,7 +58,10 @@ export function Navbar() {
           >
             <Image src="/icons/cart.svg" alt="" width={18} height={20} className="h-full w-auto" />
             {count > 0 && (
-              <span className="absolute -right-1.5 -top-1.5 grid min-w-5 place-items-center rounded-full bg-navy px-1 text-[0.65rem] font-bold text-white">
+              <span
+                aria-hidden
+                className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-navy px-1 text-[0.6rem] font-bold leading-none text-white ring-2 ring-white"
+              >
                 {count > 99 ? "99+" : count}
               </span>
             )}

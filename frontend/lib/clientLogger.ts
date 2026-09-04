@@ -6,6 +6,9 @@ type ClientError = {
   message: string;
   stack?: string;
   component?: string;
+  /** Correlation id from the failed API response, when there was one. Lets a
+   *  client-side report be joined to the server-side log of the same request. */
+  requestId?: string;
 };
 
 const ENDPOINT =

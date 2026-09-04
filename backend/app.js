@@ -9,6 +9,7 @@ const rateLimit = require("express-rate-limit");
 
 const config = require("./config");
 const { ping } = require("./dbClient");
+const requestId = require("./middleware/requestId");
 const requestLogger = require("./middleware/requestLogger");
 const { notFoundHandler, errorHandler } = require("./middleware/errorHandler");
 
@@ -21,6 +22,10 @@ const likesRoutes = require("./routes/likesRoutes");
 function createApp({ rateLimit: enableRateLimit = true } = {}) {
   const app = express();
   app.set("trust proxy", 1);
+
+  // First in the chain: everything downstream (rate-limit rejections, CORS
+  // failures, request logs, errors) should be traceable by the same id.
+  app.use(requestId);
 
   // JSON API consumed by a separate frontend origin — drop document-oriented CSP/CORP.
   app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: false }));
@@ -61,15 +66,26 @@ function createApp({ rateLimit: enableRateLimit = true } = {}) {
       res.status(503).json({ status: "degraded", db: "down" });
     }
   });
-  app.get("/", (_req, res) => res.json({ status: "ok", service: "fluffy-backend" }));
+  // /health and / stay unversioned: they describe the deployment, not the API
+  // contract, and an uptime monitor should not have to follow a version bump.
+  app.get("/", (_req, res) =>
+    res.json({ status: "ok", service: "fluffy-backend", apiVersion: "v1", api: "/api/v1" })
+  );
 
-  // Feature routes.
-  app.use("/products", productsRoutes);
-  app.use("/cart", cartRoutes);
-  app.use("/orders", ordersRoutes);
-  app.use("/likes", likesRoutes);
-  if (enableRateLimit) app.use("/api/auth", authLimiter);
-  app.use("/", authRoutes);
+  // Feature routes, all under /api/v1.
+  //
+  // Versioned from the start so a breaking change becomes /api/v2 rather than a
+  // silent shape change under a client's feet. Retrofitting this onto a live API
+  // means either breaking clients or running a long migration.
+  const v1 = express.Router();
+  v1.use("/products", productsRoutes);
+  v1.use("/cart", cartRoutes);
+  v1.use("/orders", ordersRoutes);
+  v1.use("/likes", likesRoutes);
+  if (enableRateLimit) v1.use("/auth", authLimiter);
+  v1.use("/", authRoutes);
+
+  app.use("/api/v1", v1);
 
   // 404 + central error handler — must come after all routes.
   app.use(notFoundHandler);

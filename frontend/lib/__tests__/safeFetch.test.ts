@@ -26,11 +26,14 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-/** Minimal fetch stub — only what safeFetch actually reads. */
-function mockFetch(status: number, body: string) {
+/** Minimal fetch stub — only what safeFetch actually reads.
+ *  `headers` mirrors the real backend, which sets x-request-id on every
+ *  response; pass `null` for requestId to simulate a proxy that does not. */
+function mockFetch(status: number, body: string, requestId: string | null = "req-test-1") {
   globalThis.fetch = vi.fn().mockResolvedValue({
     ok: status >= 200 && status < 300,
     status,
+    headers: new Headers(requestId ? { "x-request-id": requestId } : {}),
     text: () => Promise.resolve(body),
   } as unknown as Response);
 }
@@ -121,5 +124,49 @@ describe("safeFetch", () => {
     const init = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock
       .calls[0][1] as RequestInit;
     expect(new Headers(init.headers).get("Authorization")).toBeNull();
+  });
+});
+
+describe("requestId propagation", () => {
+  it("prefers the requestId from the error envelope", async () => {
+    mockFetch(
+      500,
+      JSON.stringify({
+        error: { message: "boom", code: "INTERNAL_ERROR", requestId: "from-body" },
+      }),
+      "from-header"
+    );
+
+    const res = await safeFetch("/orders", { baseUrl: "http://api.test" });
+
+    expect(res.ok).toBe(false);
+    if (res.ok) throw new Error("expected a failure");
+    expect(res.error.requestId).toBe("from-body");
+  });
+
+  it("falls back to the x-request-id header when the body has no envelope", async () => {
+    // A 502 from a proxy: the header survives, the JSON envelope does not.
+    mockFetch(502, "<html>Bad Gateway</html>", "from-header");
+
+    const res = await safeFetch("/orders", { baseUrl: "http://api.test" });
+
+    expect(res.ok).toBe(false);
+    if (res.ok) throw new Error("expected a failure");
+    expect(res.error.code).toBe("HTTP_ERROR");
+    expect(res.error.requestId).toBe("from-header");
+  });
+
+  it("still reports the real status when no requestId is available anywhere", async () => {
+    // Guards a regression: reading the header must never turn a 404 into a
+    // network error just because the id is missing.
+    mockFetch(404, JSON.stringify({ error: { message: "nope", code: "NOT_FOUND" } }), null);
+
+    const res = await safeFetch("/orders/FL1", { baseUrl: "http://api.test" });
+
+    expect(res.ok).toBe(false);
+    if (res.ok) throw new Error("expected a failure");
+    expect(res.status).toBe(404);
+    expect(res.error.code).toBe("NOT_FOUND");
+    expect(res.error.requestId).toBeUndefined();
   });
 });

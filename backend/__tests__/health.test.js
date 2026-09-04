@@ -59,9 +59,9 @@ describe("authentication is required where it should be", () => {
   // silently stops being protected is the #1 API vulnerability, and it is
   // invisible in manual testing because the happy path still works.
   it.each([
-    ["GET", "/cart/1"],
-    ["GET", "/likes/1"],
-    ["GET", "/orders/user/1"],
+    ["GET", "/api/v1/cart/1"],
+    ["GET", "/api/v1/likes/1"],
+    ["GET", "/api/v1/orders/user/1"],
   ])("%s %s rejects an unauthenticated caller", async (method, path) => {
     const res = await request(app)[method.toLowerCase()](path);
 
@@ -70,7 +70,7 @@ describe("authentication is required where it should be", () => {
   });
 
   it("POST /cart rejects an unauthenticated caller", async () => {
-    const res = await request(app).post("/cart").send({ product_id: 1, quantity: 1 });
+    const res = await request(app).post("/api/v1/cart").send({ product_id: 1, quantity: 1 });
 
     expect(res.status).toBe(401);
   });
@@ -78,7 +78,7 @@ describe("authentication is required where it should be", () => {
 
 describe("public endpoints stay public", () => {
   it("GET /products needs no token", async () => {
-    const res = await request(app).get("/products");
+    const res = await request(app).get("/api/v1/products");
 
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);

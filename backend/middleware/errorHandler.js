@@ -24,6 +24,7 @@ const errorHandler = (err, req, res, _next) => {
   const details = isApp ? err.details : undefined;
 
   logger[status >= 500 ? "error" : "warn"](err.message || "Unhandled error", {
+    requestId: req.id,
     code,
     status,
     method: req.method,
@@ -34,7 +35,16 @@ const errorHandler = (err, req, res, _next) => {
     details,
   });
 
-  const payload = { error: { message: clientMessage, code, ...(details ? { details } : {}) } };
+  // requestId goes to the client on purpose: when a customer reports a failure,
+  // that string is what turns "it broke" into a single log line.
+  const payload = {
+    error: {
+      message: clientMessage,
+      code,
+      requestId: req.id,
+      ...(details ? { details } : {}),
+    },
+  };
   if (config.isDevelopment && !(isApp && err.isOperational)) {
     payload.error.stack = err.stack;
   }

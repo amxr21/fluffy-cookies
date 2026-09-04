@@ -6,7 +6,8 @@ const nextConfig: NextConfig = {
       {
         // Google account avatars returned by Google Identity Services as the
         // signed-in user's `picture`. next/image refuses any remote host that
-        // is not allowlisted here.
+        // is not allowlisted here, and the refusal is a thrown error that takes
+        // the whole page down rather than just failing the image.
         protocol: "https",
         hostname: "lh3.googleusercontent.com",
         pathname: "/a/**",

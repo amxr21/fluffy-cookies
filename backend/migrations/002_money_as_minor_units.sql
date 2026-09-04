@@ -30,11 +30,10 @@ UPDATE orders SET total_minor = ROUND(total * 100);
 ALTER TABLE orders DROP COLUMN total;
 
 -- --- order_items ----------------------------------------------------------
--- `price` here was declared but never written (the insert only ever supplied
--- order_id, product_id and quantity), so there is nothing to convert - the
--- column is replaced outright by the snapshot columns below.
-ALTER TABLE order_items DROP COLUMN price;
-
+-- There is no `price` column here to convert: 001 never created one, and the
+-- insert only ever supplied order_id, product_id and quantity. Order lines
+-- carried no money at all, which is the gap the snapshot columns below close.
+--
 -- Snapshot columns: an order line must keep what was actually charged and what
 -- the product was called at the time. Joining live to `products` for display
 -- means editing a product silently rewrites every past invoice.

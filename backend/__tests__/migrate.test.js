@@ -131,6 +131,91 @@ describe("splitStatements", () => {
   });
 });
 
+describe("the real migration set", () => {
+  /**
+   * A static check that every DROP COLUMN names a column some earlier migration
+   * actually created.
+   *
+   * This exists because 002 originally dropped `order_items.price`, a column
+   * 001 never created. Nothing local caught it — the unit tests never execute
+   * SQL — and it failed in CI against a real database. A schema model built
+   * from the migration files themselves catches that class of mistake without
+   * needing an engine.
+   */
+  const path = require("path");
+  const realDir = path.join(__dirname, "..", "migrations");
+
+  /** Replay the migration files to work out which columns exist when. */
+  function schemaBefore(stopAtVersion) {
+    const tables = new Map();
+
+    for (const m of loadMigrations(realDir)) {
+      if (m.version >= stopAtVersion) break;
+
+      for (const [, table, body] of m.contents.matchAll(
+        /CREATE TABLE (?:IF NOT EXISTS )?(\w+)\s*\(([\s\S]*?)\n\s*\);/g
+      )) {
+        const cols = body
+          .split("\n")
+          .map((l) => l.trim())
+          .filter((l) => l && !/^(FOREIGN|UNIQUE|PRIMARY|KEY|INDEX|CONSTRAINT)\b/i.test(l))
+          .map((l) => l.split(/\s+/)[0]);
+        tables.set(table, new Set(cols));
+      }
+
+      for (const [, table, clauses] of m.contents.matchAll(
+        /ALTER TABLE (\w+)([\s\S]*?);/g
+      )) {
+        const cols = tables.get(table) ?? new Set();
+        for (const [, col] of clauses.matchAll(/ADD COLUMN (\w+)/g)) cols.add(col);
+        for (const [, col] of clauses.matchAll(/DROP COLUMN (\w+)/g)) cols.delete(col);
+        tables.set(table, cols);
+      }
+    }
+    return tables;
+  }
+
+  it("only drops columns that exist at that point in the sequence", () => {
+    const problems = [];
+
+    for (const m of loadMigrations(realDir)) {
+      const schema = schemaBefore(m.version);
+
+      for (const [, table, clauses] of m.contents.matchAll(
+        /ALTER TABLE (\w+)([\s\S]*?);/g
+      )) {
+        for (const [, col] of clauses.matchAll(/DROP COLUMN (\w+)/g)) {
+          if (!schema.get(table)?.has(col)) {
+            problems.push(`${m.name}: drops ${table}.${col}, which does not exist yet`);
+          }
+        }
+      }
+    }
+
+    expect(problems).toEqual([]);
+  });
+
+  it("only adds columns to tables that exist", () => {
+    const problems = [];
+
+    for (const m of loadMigrations(realDir)) {
+      const schema = schemaBefore(m.version);
+
+      for (const [, table] of m.contents.matchAll(/ALTER TABLE (\w+)/g)) {
+        // A table created inside this same migration is fine.
+        const createdHere = new RegExp(
+          `CREATE TABLE (?:IF NOT EXISTS )?${table}\\b`
+        ).test(m.contents);
+        if (!schema.has(table) && !createdHere) {
+          problems.push(`${m.name}: alters ${table}, which does not exist yet`);
+        }
+      }
+    }
+
+    expect(problems).toEqual([]);
+  });
+});
+
 describe("assertNoDrift", () => {
   const migration = (version, name, body) => ({
     version,

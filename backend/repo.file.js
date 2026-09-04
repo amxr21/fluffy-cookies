@@ -39,8 +39,11 @@ async function findProductById(id) {
 // --- cart ---
 function decorateCartLine(line) {
   const p = db.products.find((pr) => pr.id === Number(line.product_id));
+  // Shape matches the storefront's CartLine: `id` is the slug it keys UI state
+  // on, `productId` is the numeric id it must send back on writes.
   return {
-    id: String(line.product_id),
+    id: p?.slug ?? String(line.product_id),
+    productId: Number(line.product_id),
     product_id: line.product_id,
     name: p?.name ?? "",
     description: p?.description ?? "",

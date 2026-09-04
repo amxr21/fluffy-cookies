@@ -2,7 +2,10 @@
  *  optimistic) once the admin backend is wired — see STOREFRONT-TEMPLATE. */
 
 export type CartLine = {
+  /** Slug — stable key for UI state and localStorage. */
   id: string;
+  /** Numeric id the API expects on cart/order writes (see lib/menu.ts). */
+  productId: number;
   name: string;
   description: string;
   price: number;
@@ -15,6 +18,7 @@ export type Fulfillment = "Pickup" | "Delivery";
 export const SEED_CART: CartLine[] = [
   {
     id: "iced-matcha-latte",
+    productId: 11,
     name: "Iced Matcha Latte",
     description: "earthy matcha with your choice of milk",
     price: 56,
@@ -23,6 +27,7 @@ export const SEED_CART: CartLine[] = [
   },
   {
     id: "classic-chocolate-chip",
+    productId: 1,
     name: "Classic Chocolate Chip",
     description: "golden edges, gooey center, packed with chips",
     price: 48,
@@ -31,6 +36,7 @@ export const SEED_CART: CartLine[] = [
   },
   {
     id: "double-chocolate-fudge",
+    productId: 2,
     name: "Double Chocolate Fudge",
     description: "rich, soft, dark & milk chocolate mix",
     price: 40,

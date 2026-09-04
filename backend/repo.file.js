@@ -111,7 +111,25 @@ async function toggleLike(userId, productId) {
 }
 
 // --- orders ---
-async function createOrder({ userId, fulfillment, payment, contact, items, totalMinor, currency }) {
+/** Look up the order a previous attempt with this key already created. */
+async function findOrderByIdempotencyKey(key, userId) {
+  const claim = db.order_idempotency.find(
+    (r) => r.idempotency_key === key && String(r.user_id ?? "") === String(userId ?? "")
+  );
+  if (!claim) return null;
+  return clone(db.orders.find((o) => o.id === claim.order_id) || null);
+}
+
+async function createOrder({
+  userId,
+  fulfillment,
+  payment,
+  contact,
+  items,
+  totalMinor,
+  currency,
+  idempotencyKey,
+}) {
   const id = nextOrderId();
   const orderNumber = `FL${id}`;
   const order = {
@@ -136,6 +154,13 @@ async function createOrder({ userId, fulfillment, payment, contact, items, total
     createdAt: new Date().toISOString(),
   };
   db.orders.push(order);
+  if (idempotencyKey) {
+    db.order_idempotency.push({
+      idempotency_key: idempotencyKey,
+      user_id: userId ? Number(userId) : null,
+      order_id: id,
+    });
+  }
   return clone(order);
 }
 async function getOrdersByUser(userId) {
@@ -158,6 +183,7 @@ module.exports = {
   getLikes,
   toggleLike,
   createOrder,
+  findOrderByIdempotencyKey,
   getOrdersByUser,
   getOrderByNumber,
 };

@@ -108,7 +108,28 @@ async function toggleLike(userId, productId) {
 }
 
 // --- orders ---
-async function createOrder({ userId, fulfillment, payment, contact, items, totalMinor, currency }) {
+/** Look up the order a previous attempt with this key already created. */
+async function findOrderByIdempotencyKey(key, userId) {
+  const rows = await query(
+    `SELECT o.order_number AS orderNumber, o.status, o.total_minor, o.currency
+     FROM order_idempotency oi JOIN orders o ON o.id = oi.order_id
+     WHERE oi.idempotency_key = ? AND oi.user_id <=> ?`,
+    [key, userId ?? null],
+    { op: "findOrderByIdempotencyKey" }
+  );
+  return rows[0] || null;
+}
+
+async function createOrder({
+  userId,
+  fulfillment,
+  payment,
+  contact,
+  items,
+  totalMinor,
+  currency,
+  idempotencyKey,
+}) {
   return withTransaction(async (q) => {
     const result = await q(
       `INSERT INTO orders (user_id, status, total_minor, currency, fulfillment, payment, contact)
@@ -141,6 +162,17 @@ async function createOrder({ userId, fulfillment, payment, contact, items, total
         { op: "createOrder.item" }
       );
     }
+    // Claim the key inside the same transaction as the order. A concurrent
+    // duplicate hits the PRIMARY KEY and its whole transaction rolls back, so
+    // the race cannot produce two orders.
+    if (idempotencyKey) {
+      await q(
+        "INSERT INTO order_idempotency (idempotency_key, user_id, order_id) VALUES (?, ?, ?)",
+        [idempotencyKey, userId || null, orderId],
+        { op: "createOrder.idempotency" }
+      );
+    }
+
     return { id: orderId, orderNumber, status: "pending", totalMinor, currency };
   });
 }
@@ -189,6 +221,7 @@ module.exports = {
   getLikes,
   toggleLike,
   createOrder,
+  findOrderByIdempotencyKey,
   getOrdersByUser,
   getOrderByNumber,
 };

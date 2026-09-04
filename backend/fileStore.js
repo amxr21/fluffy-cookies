@@ -31,6 +31,7 @@ const db = {
   ],
   cart_items: [], // { user_id, product_id, quantity }
   likes: [], // { user_id, product_id }
+  order_idempotency: [], // { idempotency_key, user_id, order_id }
   orders: [], // { id, orderNumber, user_id, status, totalMinor, currency, fulfillment, payment, contact, items, createdAt }
 };
 

@@ -10,6 +10,31 @@ const {
 
 const createOrder = async (req, res) => {
   const { fulfillment, payment, contact, items } = req.body;
+  const userId = req.user?.id ?? null;
+
+  // A retry, a double-click, or a second tab must not place a second order.
+  // The key is scoped to the caller, so one customer's key can never return
+  // another customer's order.
+  const rawKey = req.get("Idempotency-Key");
+  // Bound and charset-check the key before it reaches a PRIMARY KEY column.
+  const idempotencyKey =
+    rawKey && /^[A-Za-z0-9._-]{8,64}$/.test(rawKey) ? rawKey : null;
+  if (rawKey && !idempotencyKey) {
+    throw badRequest(
+      "Idempotency-Key must be 8-64 characters of letters, digits, dot, dash or underscore"
+    );
+  }
+  if (idempotencyKey) {
+    const existing = await repo.findOrderByIdempotencyKey(idempotencyKey, userId);
+    if (existing) {
+      return res.status(200).json({
+        orderNumber: existing.orderNumber,
+        totalMinor: existing.totalMinor ?? existing.total_minor,
+        currency: existing.currency,
+        idempotentReplay: true,
+      });
+    }
+  }
 
   // Price, name and total all come from the database — the request body
   // supplies only which product and how many. A cart posted with its own
@@ -33,7 +58,6 @@ const createOrder = async (req, res) => {
     priced.map((line) => lineTotal(line.unitPriceMinor, line.quantity))
   );
 
-  const userId = req.user?.id ?? null;
   const order = await repo.createOrder({
     userId,
     fulfillment,
@@ -42,6 +66,7 @@ const createOrder = async (req, res) => {
     items: priced,
     totalMinor,
     currency: DEFAULT_CURRENCY,
+    idempotencyKey,
   });
 
   if (userId) await repo.clearCart(userId);

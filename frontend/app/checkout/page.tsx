@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Container } from "@/components/ui/Container";
@@ -77,6 +77,12 @@ export default function CheckoutPage() {
   const [submitting, setSubmitting] = useState(false);
   /** Field errors shown inline. Populated on submit, cleared as the user types. */
   const [errors, setErrors] = useState<Partial<Record<FormField, string>>>({});
+  /**
+   * Idempotency key for this checkout attempt. Held in a ref, not state, so a
+   * retry after a failure reuses the SAME key — that is what makes a retry safe
+   * rather than a second order. Cleared only once an order is actually placed.
+   */
+  const idempotencyKey = useRef<string | null>(null);
 
   const set = (k: keyof typeof form, v: string) => {
     setForm((f) => ({ ...f, [k]: v }));
@@ -114,20 +120,31 @@ export default function CheckoutPage() {
         ? localStorage.getItem(AUTH_KEYS.userId)
         : null;
 
-    const res = await postJSON<{ orderNumber: string }>("/orders", {
+    // Generated once per attempt and reused across retries of that attempt.
+    if (!idempotencyKey.current) {
+      idempotencyKey.current = crypto.randomUUID();
+    }
+
+    const res = await postJSON<{ orderNumber: string }>(
+      "/orders",
+      {
       user_id: userId,
       fulfillment,
       payment,
       discount_code: discount || undefined,
       contact: form,
       items: lines.map((l) => ({ product_id: l.productId, quantity: l.quantity })),
-    });
+      },
+      { headers: { "Idempotency-Key": idempotencyKey.current } }
+    );
     setSubmitting(false);
 
     if (!res.ok) {
       toast.error(res.error.message || "Couldn't place your order");
       return;
     }
+    // The order exists; a later checkout is a new attempt and needs a new key.
+    idempotencyKey.current = null;
     clearCart();
     const ref = res.data?.orderNumber ?? "";
     router.push(`/order-success${ref ? `?order=${encodeURIComponent(ref)}` : ""}`);

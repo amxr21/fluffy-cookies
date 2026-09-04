@@ -11,6 +11,7 @@ import { useToast } from "@/components/providers/ToastProvider";
 import { useCart } from "@/context/CartContext";
 import { postJSON } from "@/lib/safeFetch";
 import { AUTH_KEYS } from "@/lib/config";
+import { formatMinor, lineTotalMinor } from "@/lib/money";
 
 type PaymentMethod = "cash" | "card-on-delivery" | "online";
 
@@ -61,7 +62,7 @@ function validate(
 export default function CheckoutPage() {
   const router = useRouter();
   const toast = useToast();
-  const { lines, subtotal, clearCart } = useCart();
+  const { lines, subtotalMinor, clearCart } = useCart();
 
   const [form, setForm] = useState({
     name: "",
@@ -230,7 +231,9 @@ export default function CheckoutPage() {
                   <span className="truncate">
                     {l.name} × {l.quantity}
                   </span>
-                  <span className="shrink-0">AED {(l.price * l.quantity).toFixed(0)}</span>
+                  <span className="shrink-0">
+                    {formatMinor(lineTotalMinor(l.priceMinor, l.quantity), l.currency)}
+                  </span>
                 </li>
               ))}
               {lines.length === 0 && (
@@ -259,7 +262,7 @@ export default function CheckoutPage() {
             <div className="flex items-center justify-between border-t border-navy/20 pt-4">
               <span className="text-h4 font-bold text-navy">Total</span>
               <span className="text-h4 font-bold text-navy">
-                AED {subtotal.toFixed(1)}
+                {formatMinor(subtotalMinor)}
               </span>
             </div>
 

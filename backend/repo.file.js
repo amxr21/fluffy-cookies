@@ -47,7 +47,8 @@ function decorateCartLine(line) {
     product_id: line.product_id,
     name: p?.name ?? "",
     description: p?.description ?? "",
-    price: p?.price ?? 0,
+    price_minor: p?.price_minor ?? 0,
+    currency: p?.currency ?? "AED",
     image: p?.image ?? "",
     quantity: line.quantity,
   };
@@ -110,7 +111,7 @@ async function toggleLike(userId, productId) {
 }
 
 // --- orders ---
-async function createOrder({ userId, fulfillment, payment, contact, items, total }) {
+async function createOrder({ userId, fulfillment, payment, contact, items, totalMinor, currency }) {
   const id = nextOrderId();
   const orderNumber = `FL${id}`;
   const order = {
@@ -118,11 +119,20 @@ async function createOrder({ userId, fulfillment, payment, contact, items, total
     orderNumber,
     user_id: userId ? Number(userId) : null,
     status: "pending",
-    total,
+    totalMinor,
+    currency,
     fulfillment,
     payment,
     contact,
-    items,
+    // Snapshot what was charged, mirroring the MySQL repo: the line keeps its
+    // own price and name so a later product edit cannot rewrite this order.
+    items: items.map((it) => ({
+      product_id: it.product_id,
+      quantity: it.quantity,
+      unit_price_minor: it.unitPriceMinor,
+      currency,
+      name_snapshot: it.name,
+    })),
     createdAt: new Date().toISOString(),
   };
   db.orders.push(order);

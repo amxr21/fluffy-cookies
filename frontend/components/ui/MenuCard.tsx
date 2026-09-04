@@ -4,6 +4,7 @@ import Image from "next/image";
 
 import { Button } from "@/components/ui/Button";
 import { useCart } from "@/context/CartContext";
+import { DEFAULT_CURRENCY } from "@/lib/money";
 import type { MenuItem } from "@/lib/menu";
 
 /** Menu item card: photo, name, description, full-width order button. */
@@ -16,7 +17,8 @@ export function MenuCard({ item }: { item: MenuItem }) {
       productId: item.productId,
       name: item.name,
       description: item.description,
-      price: item.price,
+      priceMinor: item.priceMinor,
+      currency: DEFAULT_CURRENCY,
       image: item.image,
     });
 

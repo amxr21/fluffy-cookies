@@ -2,15 +2,20 @@
 
 export type OrderItem = {
   product_id: string;
-  name: string;
+  /** Name as charged, snapshotted on the order line — not the live product
+   *  name, so a later rename cannot rewrite a past invoice. */
+  name_snapshot: string;
   quantity: number;
-  price: number;
+  /** Unit price as charged, in minor units. */
+  unit_price_minor: number;
+  currency: string;
 };
 
 export type Order = {
   orderNumber: string;
   status: string;
-  total: number;
+  totalMinor: number;
+  currency: string;
   createdAt: string;
   fulfillment: string;
   items: OrderItem[];

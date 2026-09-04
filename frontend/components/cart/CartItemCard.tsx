@@ -2,6 +2,7 @@ import Image from "next/image";
 
 import { QuantityCounter } from "@/components/ui/QuantityCounter";
 import type { CartLine } from "@/lib/cart";
+import { formatMinor, lineTotalMinor } from "@/lib/money";
 
 export function CartItemCard({
   line,
@@ -33,7 +34,7 @@ export function CartItemCard({
           </div>
           <div className="mt-auto pt-3">
             <p className="text-h3 font-bold text-navy leading-8">
-              AED {(line.price * line.quantity).toFixed(0)}
+              {formatMinor(lineTotalMinor(line.priceMinor, line.quantity), line.currency)}
             </p>
             <p className="text-caption text-navy/50">VAT included</p>
           </div>

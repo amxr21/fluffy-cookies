@@ -1,17 +1,37 @@
 /** Order controllers — create (checkout), history, track-by-number. */
 const repo = require("../repo");
 const { notFound, badRequest } = require("../errors/AppError");
+const {
+  assertMinor,
+  lineTotal,
+  sumMinor,
+  DEFAULT_CURRENCY,
+} = require("../lib/money");
 
 const createOrder = async (req, res) => {
   const { fulfillment, payment, contact, items } = req.body;
 
-  // Compute total server-side from real product prices (never trust client totals).
-  let total = 0;
+  // Price, name and total all come from the database — the request body
+  // supplies only which product and how many. A cart posted with its own
+  // prices, or a `total` field, changes nothing about what is charged.
+  const priced = [];
   for (const it of items) {
     const product = await repo.findProductById(it.product_id);
     if (!product) throw badRequest(`Unknown product: ${it.product_id}`);
-    total += Number(product.price) * it.quantity;
+
+    priced.push({
+      product_id: it.product_id,
+      quantity: it.quantity,
+      // Snapshotted onto the order line so a later edit to the product cannot
+      // change what this order says it charged.
+      unitPriceMinor: assertMinor(product.price_minor, "product.price_minor"),
+      name: product.name,
+    });
   }
+
+  const totalMinor = sumMinor(
+    priced.map((line) => lineTotal(line.unitPriceMinor, line.quantity))
+  );
 
   const userId = req.user?.id ?? null;
   const order = await repo.createOrder({
@@ -19,13 +39,18 @@ const createOrder = async (req, res) => {
     fulfillment,
     payment,
     contact,
-    items,
-    total,
+    items: priced,
+    totalMinor,
+    currency: DEFAULT_CURRENCY,
   });
 
   if (userId) await repo.clearCart(userId);
 
-  res.status(201).json({ orderNumber: order.orderNumber, total: order.total });
+  res.status(201).json({
+    orderNumber: order.orderNumber,
+    totalMinor: order.totalMinor,
+    currency: order.currency,
+  });
 };
 
 const myOrders = async (req, res) => {

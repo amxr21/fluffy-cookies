@@ -11,7 +11,9 @@ export type MenuItem = {
   name: string;
   description: string;
   image: string;
-  price: number;
+  /** VAT-inclusive price in minor units (fils). 4800 = AED 48.00.
+   *  Integer money only — see lib/money.ts. */
+  priceMinor: number;
 };
 
 export type MenuCategory = {
@@ -34,7 +36,7 @@ export const MENU: MenuCategory[] = [
         name: "Classic Chocolate Chip",
         description: "Golden edges, gooey center, packed with chips.",
         image: "/images/cookies/image 12.jpg",
-        price: 48,
+        priceMinor: 4800,
       },
       {
         id: "double-chocolate-fudge",
@@ -43,7 +45,7 @@ export const MENU: MenuCategory[] = [
         name: "Double Chocolate Fudge",
         description: "Rich, soft, dark & milk chocolate mix.",
         image: "/images/cookies/image 13.jpg",
-        price: 40,
+        priceMinor: 4000,
       },
       {
         id: "brownie-stuffed-cookie",
@@ -52,7 +54,7 @@ export const MENU: MenuCategory[] = [
         name: "Brownie Stuffed Cookie",
         description: "Soft cookie dough with a molten brownie core.",
         image: "/images/cookies/image 14.jpg",
-        price: 45,
+        priceMinor: 4500,
       },
       {
         id: "lotus-bomb",
@@ -61,7 +63,7 @@ export const MENU: MenuCategory[] = [
         name: "Lotus Bomb",
         description: "Caramelized cookie base with Biscoff drizzle.",
         image: "/images/cookies/image 15.jpg",
-        price: 42,
+        priceMinor: 4200,
       },
       {
         id: "nutella-heart",
@@ -70,7 +72,7 @@ export const MENU: MenuCategory[] = [
         name: "Nutella Heart",
         description: "Vanilla dough with a Nutella center, topped with sea salt.",
         image: "/images/cookies/image 16.jpg",
-        price: 44,
+        priceMinor: 4400,
       },
       {
         id: "oreo-chunk",
@@ -79,7 +81,7 @@ export const MENU: MenuCategory[] = [
         name: "Oreo Chunk",
         description: "Cookie & cream fusion with Oreo bits throughout.",
         image: "/images/cookies/image 17.jpg",
-        price: 42,
+        priceMinor: 4200,
       },
     ],
   },
@@ -95,7 +97,7 @@ export const MENU: MenuCategory[] = [
         name: "Cookie Sandwiches",
         description: "Two cookies filled with vanilla or chocolate cream.",
         image: "/images/sweets/image 12.jpg",
-        price: 38,
+        priceMinor: 3800,
       },
       {
         id: "brookies",
@@ -104,7 +106,7 @@ export const MENU: MenuCategory[] = [
         name: "Brookies",
         description: "Brownie + cookie layered squares, crispy top, chewy inside.",
         image: "/images/sweets/image 13.jpg",
-        price: 40,
+        priceMinor: 4000,
       },
       {
         id: "choco-dipped-treats",
@@ -113,7 +115,7 @@ export const MENU: MenuCategory[] = [
         name: "Choco-Dipped Treats",
         description: "Dipped cookies or mini marshmallows, rotating flavors.",
         image: "/images/sweets/image 14.jpg",
-        price: 46,
+        priceMinor: 4600,
       },
       {
         id: "mini-cookie-box",
@@ -122,7 +124,7 @@ export const MENU: MenuCategory[] = [
         name: "Mini Cookie Box",
         description: "Bite-sized assorted cookies, perfect for sharing.",
         image: "/images/sweets/image 15.jpg",
-        price: 60,
+        priceMinor: 6000,
       },
     ],
   },
@@ -138,7 +140,7 @@ export const MENU: MenuCategory[] = [
         name: "Iced Matcha Latte",
         description: "Earthy matcha with your choice of milk.",
         image: "/images/drinkss/image 12.jpg",
-        price: 56,
+        priceMinor: 5600,
       },
       {
         id: "strawberry-matcha-swirl",
@@ -147,7 +149,7 @@ export const MENU: MenuCategory[] = [
         name: "Strawberry Matcha Swirl",
         description: "Layered with real strawberry purée.",
         image: "/images/drinkss/image 13.jpg",
-        price: 58,
+        priceMinor: 5800,
       },
       {
         id: "berry-cloud",
@@ -156,7 +158,7 @@ export const MENU: MenuCategory[] = [
         name: "Berry Cloud",
         description: "Strawberry, blueberry, banana & oat milk.",
         image: "/images/drinkss/image 14.jpg",
-        price: 54,
+        priceMinor: 5400,
       },
       {
         id: "iced-spanish-latte",
@@ -165,7 +167,7 @@ export const MENU: MenuCategory[] = [
         name: "Iced Spanish Latte",
         description: "Espresso, sweet milk, vanilla notes.",
         image: "/images/drinkss/image 15.jpg",
-        price: 50,
+        priceMinor: 5000,
       },
       {
         id: "caramel-cloud-latte",
@@ -174,7 +176,7 @@ export const MENU: MenuCategory[] = [
         name: "Caramel Cloud Latte",
         description: "Smooth espresso with whipped caramel foam.",
         image: "/images/drinkss/image 16.jpg",
-        price: 52,
+        priceMinor: 5200,
       },
       {
         id: "vanilla-iced-latte",
@@ -183,7 +185,7 @@ export const MENU: MenuCategory[] = [
         name: "Vanilla Iced Latte",
         description: "Chilled espresso with vanilla-infused sweet milk.",
         image: "/images/drinkss/image 17.jpg",
-        price: 48,
+        priceMinor: 4800,
       },
     ],
   },

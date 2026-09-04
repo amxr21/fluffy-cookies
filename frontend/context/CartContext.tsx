@@ -14,6 +14,7 @@ import { AUTH_KEYS } from "@/lib/config";
 import { getJSON, postJSON, patchJSON, deleteJSON } from "@/lib/safeFetch";
 import type { CartLine } from "@/lib/cart";
 import { MENU } from "@/lib/menu";
+import { lineTotalMinor, sumMinor } from "@/lib/money";
 
 /**
  * Global cart state (per storefront template): server-backed + optimistic when
@@ -25,7 +26,8 @@ export type AddToCartInput = Omit<CartLine, "quantity"> & { quantity?: number };
 type CartContextValue = {
   lines: CartLine[];
   count: number;
-  subtotal: number;
+  /** VAT-inclusive cart total in minor units (fils). */
+  subtotalMinor: number;
   hydrated: boolean;
   addToCart: (item: AddToCartInput) => Promise<boolean>;
   setQuantity: (id: string, quantity: number) => Promise<void>;
@@ -39,7 +41,7 @@ const noop = async () => {};
 const CartContext = createContext<CartContextValue>({
   lines: [],
   count: 0,
-  subtotal: 0,
+  subtotalMinor: 0,
   hydrated: false,
   addToCart: async () => false,
   setQuantity: noop,
@@ -206,10 +208,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     persistGuest([]);
   }, [persistGuest]);
 
-  const { count, subtotal } = useMemo(
+  const { count, subtotalMinor } = useMemo(
     () => ({
       count: lines.reduce((n, l) => n + l.quantity, 0),
-      subtotal: lines.reduce((s, l) => s + l.price * l.quantity, 0),
+      // Integer arithmetic throughout — see lib/money.ts.
+      subtotalMinor: sumMinor(
+        lines.map((l) => lineTotalMinor(l.priceMinor, l.quantity))
+      ),
     }),
     [lines]
   );
@@ -218,14 +223,14 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     () => ({
       lines,
       count,
-      subtotal,
+      subtotalMinor,
       hydrated,
       addToCart,
       setQuantity,
       removeFromCart,
       clearCart,
     }),
-    [lines, count, subtotal, hydrated, addToCart, setQuantity, removeFromCart, clearCart]
+    [lines, count, subtotalMinor, hydrated, addToCart, setQuantity, removeFromCart, clearCart]
   );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;

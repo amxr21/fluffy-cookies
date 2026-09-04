@@ -10,6 +10,7 @@ import { Container } from "@/components/ui/Container";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { useCart } from "@/context/CartContext";
 import type { Fulfillment } from "@/lib/cart";
+import { formatMinor } from "@/lib/money";
 
 const FULFILLMENT_OPTIONS = [
   { value: "Pickup", label: "Pickup" },
@@ -18,7 +19,7 @@ const FULFILLMENT_OPTIONS = [
 
 export default function CartPage() {
   const router = useRouter();
-  const { lines, subtotal, setQuantity, hydrated } = useCart();
+  const { lines, subtotalMinor, setQuantity, hydrated } = useCart();
   const [fulfillment, setFulfillment] = useState<Fulfillment>("Pickup");
 
   return (
@@ -66,7 +67,7 @@ export default function CartPage() {
                 <div className="flex flex-wrap items-center justify-between gap-4">
                   <span className="text-h2 font-bold text-navy">Total:</span>
                   <span className="ml-auto text-h2 font-bold text-navy">
-                    AED {subtotal.toFixed(1)}
+                    {formatMinor(subtotalMinor)}
                   </span>
                   <Button onClick={() => router.push("/checkout")}>
                     Continue to Payments

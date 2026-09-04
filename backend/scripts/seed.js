@@ -1,8 +1,11 @@
 /** Seed the products table from the storefront's menu data. */
 const mysql = require("mysql2/promise");
 const config = require("../config");
+const { toMinor, DEFAULT_CURRENCY } = require("../lib/money");
 
 // Mirror of the frontend menu (lib/menu.ts). Keep in sync when the menu changes.
+// Prices are in MAJOR units here for readability and VAT-inclusive; toMinor()
+// converts at the boundary so the database only ever sees integers.
 const PRODUCTS = [
   ["Classic Chocolate Chip", "Golden edges, gooey center, packed with chips.", 48, "/images/cookies/image 12.jpg", "cookies"],
   ["Double Chocolate Fudge", "Rich, soft, dark & milk chocolate mix.", 40, "/images/cookies/image 13.jpg", "cookies"],
@@ -37,12 +40,13 @@ const PRODUCTS = [
     // update in place on re-run.
     for (const [index, [name, description, price, image, category]] of PRODUCTS.entries()) {
       await conn.execute(
-        `INSERT INTO products (id, name, description, price, image, category)
-         VALUES (?, ?, ?, ?, ?, ?)
+        `INSERT INTO products (id, name, description, price_minor, currency, image, category)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE
            name = VALUES(name), description = VALUES(description),
-           price = VALUES(price), image = VALUES(image), category = VALUES(category)`,
-        [index + 1, name, description, price, image, category]
+           price_minor = VALUES(price_minor), currency = VALUES(currency),
+           image = VALUES(image), category = VALUES(category)`,
+        [index + 1, name, description, toMinor(price), DEFAULT_CURRENCY, image, category]
       );
     }
     console.log(`✓ Seeded ${PRODUCTS.length} products`);

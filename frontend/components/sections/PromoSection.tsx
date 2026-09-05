@@ -35,11 +35,14 @@ function TileCell({ tile }: { tile: Tile }) {
   const base = "flex aspect-square items-center justify-center rounded-2xl p-4";
   switch (tile.kind) {
     case "color":
-      return <div className={`${base} ${tile.color}`} />;
+      return <div aria-hidden className={`${base} ${tile.color}`} />;
     case "text":
       return (
         <div className={`${base} ${tile.color}`}>
-          <span className={`whitespace-pre-line text-center text-5xl font-medium ${tile.textColor}`}>
+          <span
+            aria-hidden={tile.text === "=>"}
+            className={`whitespace-pre-line text-center text-2xl font-medium sm:text-3xl lg:text-5xl ${tile.textColor}`}
+          >
             {tile.text}
           </span>
         </div>
@@ -47,13 +50,14 @@ function TileCell({ tile }: { tile: Tile }) {
     case "icon":
     case "art":
       return (
-        <div className={`${base} ${tile.color}`}>
+        <div aria-hidden className={`${base} ${tile.color}`}>
           <Image src={tile.src} alt="" width={120} height={120} className="size-3/4 object-contain" />
         </div>
       );
     case "wide":
       return (
         <div
+          aria-hidden
           className={`relative col-span-2 flex items-center justify-end overflow-hidden rounded-2xl ${tile.color}`}
         >
           <Image
@@ -70,9 +74,15 @@ function TileCell({ tile }: { tile: Tile }) {
 
 export function PromoSection() {
   return (
-    <section>
+    <section aria-labelledby="promo-heading">
       <Container className="py-16 md:py-24">
-        <div className="grid grid-cols-3 gap-4 sm:grid-cols-6">
+        {/* The offer is conveyed by the tile mosaic alone, which is invisible
+            to assistive tech — this states it once, visually hidden. */}
+        <h2 id="promo-heading" className="sr-only">
+          Buy one coffee, get a free cookie
+        </h2>
+
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-6 sm:gap-4">
           {TILES.map((tile, i) => (
             <TileCell key={i} tile={tile} />
           ))}

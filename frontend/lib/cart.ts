@@ -8,7 +8,9 @@ export type CartLine = {
   productId: number;
   name: string;
   description: string;
-  price: number;
+  /** VAT-inclusive unit price in minor units (fils). */
+  priceMinor: number;
+  currency: string;
   quantity: number;
   image: string;
 };
@@ -21,7 +23,8 @@ export const SEED_CART: CartLine[] = [
     productId: 11,
     name: "Iced Matcha Latte",
     description: "earthy matcha with your choice of milk",
-    price: 56,
+    priceMinor: 5600,
+    currency: "AED",
     quantity: 1,
     image: "/images/drinkss/image 12.jpg",
   },
@@ -30,7 +33,8 @@ export const SEED_CART: CartLine[] = [
     productId: 1,
     name: "Classic Chocolate Chip",
     description: "golden edges, gooey center, packed with chips",
-    price: 48,
+    priceMinor: 4800,
+    currency: "AED",
     quantity: 3,
     image: "/images/cookies/image 12.jpg",
   },
@@ -39,7 +43,8 @@ export const SEED_CART: CartLine[] = [
     productId: 2,
     name: "Double Chocolate Fudge",
     description: "rich, soft, dark & milk chocolate mix",
-    price: 40,
+    priceMinor: 4000,
+    currency: "AED",
     quantity: 2,
     image: "/images/cookies/image 13.jpg",
   },

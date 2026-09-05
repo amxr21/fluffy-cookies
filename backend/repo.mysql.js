@@ -46,7 +46,7 @@ async function findProductById(id) {
 // no slug column, so `id` stays numeric here; the client keys off productId.)
 const CART_SELECT = `
   SELECT p.id AS id, p.id AS productId, ci.product_id, p.name, p.description,
-         p.price, p.image, ci.quantity
+         p.price_minor, p.currency, p.image, ci.quantity
   FROM cart_items ci JOIN products p ON p.id = ci.product_id
   WHERE ci.user_id = ?`;
 
@@ -108,12 +108,40 @@ async function toggleLike(userId, productId) {
 }
 
 // --- orders ---
-async function createOrder({ userId, fulfillment, payment, contact, items, total }) {
+/** Look up the order a previous attempt with this key already created. */
+async function findOrderByIdempotencyKey(key, userId) {
+  const rows = await query(
+    `SELECT o.order_number AS orderNumber, o.status, o.total_minor, o.currency
+     FROM order_idempotency oi JOIN orders o ON o.id = oi.order_id
+     WHERE oi.idempotency_key = ? AND oi.user_id <=> ?`,
+    [key, userId ?? null],
+    { op: "findOrderByIdempotencyKey" }
+  );
+  return rows[0] || null;
+}
+
+async function createOrder({
+  userId,
+  fulfillment,
+  payment,
+  contact,
+  items,
+  totalMinor,
+  currency,
+  idempotencyKey,
+}) {
   return withTransaction(async (q) => {
     const result = await q(
-      `INSERT INTO orders (user_id, status, total, fulfillment, payment, contact)
-       VALUES (?, 'pending', ?, ?, ?, ?)`,
-      [userId || null, total, fulfillment, payment, JSON.stringify(contact || {})],
+      `INSERT INTO orders (user_id, status, total_minor, currency, fulfillment, payment, contact)
+       VALUES (?, 'pending', ?, ?, ?, ?, ?)`,
+      [
+        userId || null,
+        totalMinor,
+        currency,
+        fulfillment,
+        payment,
+        JSON.stringify(contact || {}),
+      ],
       { op: "createOrder.insert" }
     );
     const orderId = result.insertId;
@@ -121,20 +149,37 @@ async function createOrder({ userId, fulfillment, payment, contact, items, total
     await q("UPDATE orders SET order_number = ? WHERE id = ?", [orderNumber, orderId], {
       op: "createOrder.number",
     });
+
+    // Snapshot the price and name as charged. Reading these back from a live
+    // join to `products` would mean editing a product silently rewrites every
+    // past invoice.
     for (const it of items) {
       await q(
-        "INSERT INTO order_items (order_id, product_id, quantity) VALUES (?, ?, ?)",
-        [orderId, it.product_id, it.quantity],
+        `INSERT INTO order_items
+           (order_id, product_id, quantity, unit_price_minor, currency, name_snapshot)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [orderId, it.product_id, it.quantity, it.unitPriceMinor, currency, it.name],
         { op: "createOrder.item" }
       );
     }
-    return { id: orderId, orderNumber, status: "pending", total };
+    // Claim the key inside the same transaction as the order. A concurrent
+    // duplicate hits the PRIMARY KEY and its whole transaction rolls back, so
+    // the race cannot produce two orders.
+    if (idempotencyKey) {
+      await q(
+        "INSERT INTO order_idempotency (idempotency_key, user_id, order_id) VALUES (?, ?, ?)",
+        [idempotencyKey, userId || null, orderId],
+        { op: "createOrder.idempotency" }
+      );
+    }
+
+    return { id: orderId, orderNumber, status: "pending", totalMinor, currency };
   });
 }
 
 const ORDER_SELECT = `
-  SELECT o.order_number AS orderNumber, o.status, o.total, o.fulfillment,
-         o.created_at AS createdAt
+  SELECT o.order_number AS orderNumber, o.status, o.total_minor, o.currency,
+         o.fulfillment, o.created_at AS createdAt
   FROM orders o`;
 
 async function getOrdersByUser(userId) {
@@ -151,9 +196,11 @@ async function getOrderByNumber(orderNumber) {
 }
 async function withItems(order) {
   const items = await query(
-    `SELECT oi.product_id, p.name, p.price, oi.quantity
+    // Snapshot columns only - deliberately no join to `products`, so a later
+    // price or name change cannot alter what this order says it charged.
+    `SELECT oi.product_id, oi.name_snapshot, oi.unit_price_minor, oi.currency,
+            oi.quantity
      FROM order_items oi JOIN orders o ON o.id = oi.order_id
-     JOIN products p ON p.id = oi.product_id
      WHERE o.order_number = ?`,
     [order.orderNumber],
     { op: "order.items" }
@@ -174,6 +221,7 @@ module.exports = {
   getLikes,
   toggleLike,
   createOrder,
+  findOrderByIdempotencyKey,
   getOrdersByUser,
   getOrderByNumber,
 };

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Container } from "@/components/ui/Container";
@@ -11,6 +11,7 @@ import { useToast } from "@/components/providers/ToastProvider";
 import { useCart } from "@/context/CartContext";
 import { postJSON } from "@/lib/safeFetch";
 import { AUTH_KEYS } from "@/lib/config";
+import { formatMinor, lineTotalMinor } from "@/lib/money";
 
 type PaymentMethod = "cash" | "card-on-delivery" | "online";
 
@@ -61,7 +62,7 @@ function validate(
 export default function CheckoutPage() {
   const router = useRouter();
   const toast = useToast();
-  const { lines, subtotal, clearCart } = useCart();
+  const { lines, subtotalMinor, clearCart } = useCart();
 
   const [form, setForm] = useState({
     name: "",
@@ -76,6 +77,12 @@ export default function CheckoutPage() {
   const [submitting, setSubmitting] = useState(false);
   /** Field errors shown inline. Populated on submit, cleared as the user types. */
   const [errors, setErrors] = useState<Partial<Record<FormField, string>>>({});
+  /**
+   * Idempotency key for this checkout attempt. Held in a ref, not state, so a
+   * retry after a failure reuses the SAME key — that is what makes a retry safe
+   * rather than a second order. Cleared only once an order is actually placed.
+   */
+  const idempotencyKey = useRef<string | null>(null);
 
   const set = (k: keyof typeof form, v: string) => {
     setForm((f) => ({ ...f, [k]: v }));
@@ -113,20 +120,31 @@ export default function CheckoutPage() {
         ? localStorage.getItem(AUTH_KEYS.userId)
         : null;
 
-    const res = await postJSON<{ orderNumber: string }>("/orders", {
+    // Generated once per attempt and reused across retries of that attempt.
+    if (!idempotencyKey.current) {
+      idempotencyKey.current = crypto.randomUUID();
+    }
+
+    const res = await postJSON<{ orderNumber: string }>(
+      "/orders",
+      {
       user_id: userId,
       fulfillment,
       payment,
       discount_code: discount || undefined,
       contact: form,
       items: lines.map((l) => ({ product_id: l.productId, quantity: l.quantity })),
-    });
+      },
+      { headers: { "Idempotency-Key": idempotencyKey.current } }
+    );
     setSubmitting(false);
 
     if (!res.ok) {
       toast.error(res.error.message || "Couldn't place your order");
       return;
     }
+    // The order exists; a later checkout is a new attempt and needs a new key.
+    idempotencyKey.current = null;
     clearCart();
     const ref = res.data?.orderNumber ?? "";
     router.push(`/order-success${ref ? `?order=${encodeURIComponent(ref)}` : ""}`);
@@ -230,7 +248,9 @@ export default function CheckoutPage() {
                   <span className="truncate">
                     {l.name} × {l.quantity}
                   </span>
-                  <span className="shrink-0">AED {(l.price * l.quantity).toFixed(0)}</span>
+                  <span className="shrink-0">
+                    {formatMinor(lineTotalMinor(l.priceMinor, l.quantity), l.currency)}
+                  </span>
                 </li>
               ))}
               {lines.length === 0 && (
@@ -259,7 +279,7 @@ export default function CheckoutPage() {
             <div className="flex items-center justify-between border-t border-navy/20 pt-4">
               <span className="text-h4 font-bold text-navy">Total</span>
               <span className="text-h4 font-bold text-navy">
-                AED {subtotal.toFixed(1)}
+                {formatMinor(subtotalMinor)}
               </span>
             </div>
 

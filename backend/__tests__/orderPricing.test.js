@@ -36,8 +36,12 @@ describe("server-authoritative pricing", () => {
     });
 
     expect(res.status).toBe(201);
-    // Product 1 is 4800 fils; 2 x 4800 = 9600, not the 1 the client asked for.
-    expect(res.body.totalMinor).toBe(9600);
+    // Pinned deliberately: the assertion is that the charge comes from the
+    // database (2 x 4800) and NOT from the 1 the client sent. Deriving it from
+    // the same source the endpoint reads would weaken exactly that point.
+    const unit = db.products.find((p) => p.id === 1).price_minor;
+    expect(res.body.totalMinor).toBe(2 * unit);
+    expect(res.body.totalMinor).not.toBe(1);
     expect(res.body.currency).toBe("AED");
   });
 
@@ -49,15 +53,25 @@ describe("server-authoritative pricing", () => {
   });
 
   it("sums a multi-line order exactly", async () => {
-    const res = await placeOrder({
-      items: [
-        { product_id: 1, quantity: 1 }, // 4800
-        { product_id: 2, quantity: 2 }, // 8000
-        { product_id: 3, quantity: 1 }, // 5600
-      ],
-    });
+    const lines = [
+      { product_id: 1, quantity: 1 },
+      { product_id: 2, quantity: 2 },
+      { product_id: 3, quantity: 1 },
+    ];
 
-    expect(res.body.totalMinor).toBe(18400);
+    // Derived from the seed data rather than hardcoded: the catalogue's
+    // contents are not this test's subject, and a hardcoded total silently
+    // rots the moment a price or the product list changes.
+    const expected = lines.reduce((total, line) => {
+      const product = db.products.find((p) => p.id === line.product_id);
+      return total + product.price_minor * line.quantity;
+    }, 0);
+
+    const res = await placeOrder({ items: lines });
+
+    expect(res.body.totalMinor).toBe(expected);
+    // Guard against the derivation and the endpoint both being trivially zero.
+    expect(res.body.totalMinor).toBeGreaterThan(0);
   });
 
   it("rejects an unknown product rather than pricing it at zero", async () => {

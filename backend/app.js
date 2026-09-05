@@ -54,6 +54,24 @@ function createApp({ rateLimit: enableRateLimit = true } = {}) {
     message: { error: { message: "Too many login attempts, please try again later.", code: "RATE_LIMITED" } },
   });
 
+  // Order tracking takes no auth, by design — a gift recipient can follow an
+  // order without an account. That also makes it the one endpoint an attacker
+  // can walk to enumerate orders, so it gets its own tighter budget. A real
+  // customer refreshes a handful of times; 30 lookups per 15 minutes is far
+  // more than that and far less than a scraping run needs.
+  const trackLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+      error: {
+        message: "Too many tracking lookups, please try again later.",
+        code: "RATE_LIMITED",
+      },
+    },
+  });
+
   if (enableRateLimit) app.use(generalLimiter);
   app.use(express.json());
   app.use(requestLogger);
@@ -82,7 +100,10 @@ function createApp({ rateLimit: enableRateLimit = true } = {}) {
   v1.use("/cart", cartRoutes);
   v1.use("/orders", ordersRoutes);
   v1.use("/likes", likesRoutes);
-  if (enableRateLimit) v1.use("/auth", authLimiter);
+  if (enableRateLimit) {
+    v1.use("/auth", authLimiter);
+    v1.use("/orders/track", trackLimiter);
+  }
   v1.use("/", authRoutes);
 
   app.use("/api/v1", v1);

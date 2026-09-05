@@ -7,6 +7,8 @@ const {
   sumMinor,
   DEFAULT_CURRENCY,
 } = require("../lib/money");
+const { toPublicOrder, toOwnerOrder } = require("../lib/orderView");
+const { normalizeOrderNumber, isValidOrderNumber } = require("../lib/orderNumber");
 
 const createOrder = async (req, res) => {
   const { fulfillment, payment, contact, items } = req.body;
@@ -83,13 +85,25 @@ const myOrders = async (req, res) => {
   if (String(req.user.id) !== String(req.params.userId)) {
     return res.json([]);
   }
-  res.json(await repo.getOrdersByUser(req.user.id));
+  const orders = await repo.getOrdersByUser(req.user.id);
+  res.json(orders.map(toOwnerOrder));
 };
 
 const trackOrder = async (req, res) => {
-  const order = await repo.getOrderByNumber(req.params.orderNumber);
+  // Tolerate how a customer actually types a number read off a phone: lowercase,
+  // spaced, with O for 0. Rejecting a well-formed-but-wrong shape before the
+  // lookup also keeps junk from reaching the database on a scraping run.
+  const orderNumber = normalizeOrderNumber(req.params.orderNumber);
+  if (!isValidOrderNumber(orderNumber) && !/^FL\d+$/.test(orderNumber)) {
+    throw notFound("Order not found");
+  }
+
+  const order = await repo.getOrderByNumber(orderNumber);
   if (!order) throw notFound("Order not found");
-  res.json(order);
+
+  // Public view only — this route has no auth, so anything returned here is
+  // readable by anyone holding an order number. See lib/orderView.js.
+  res.json(toPublicOrder(order));
 };
 
 module.exports = { createOrder, myOrders, trackOrder };

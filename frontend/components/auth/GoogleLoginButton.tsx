@@ -11,6 +11,7 @@ import { GOOGLE_CLIENT_ID } from "@/lib/config";
 import { postJSON } from "@/lib/safeFetch";
 import { reportClientError } from "@/lib/clientLogger";
 import { cn } from "@/lib/utils";
+import { isAllowedAvatarHost } from "@/lib/avatarHost";
 
 type AuthResponse = {
   success: boolean;
@@ -125,10 +126,17 @@ export function GoogleLoginButton() {
   };
 
   if (user) {
-    // Google avatar URLs expire and the host is allowlisted in next.config.ts;
-    // if either changes, fall back to the initial rather than an empty circle.
-    const hasPic = user.picture.trim().length > 0 && !avatarFailed;
     const first = user.name ? user.name.split(" ")[0] : "Account";
+    // Two different failures, both ending at the same fallback initial:
+    //   isAllowedAvatarHost — next/image THROWS on a host missing from
+    //     next.config's remotePatterns, and that error unmounts the whole page.
+    //     This has to be caught before render, not after.
+    //   avatarFailed — the host is fine but the image did not load (an expired
+    //     Google URL, a network blip). Reported by onError, after render.
+    const hasPic =
+      user.picture.trim().length > 0 &&
+      isAllowedAvatarHost(user.picture) &&
+      !avatarFailed;
     return (
       <div className="relative" ref={menuRef}>
         <button

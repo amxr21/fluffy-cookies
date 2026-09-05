@@ -9,12 +9,26 @@ const config = require("../config");
 const { findUserById } = require("../repo");
 const { unauthorized, forbidden } = require("../errors/AppError");
 
+/**
+ * Pin the algorithm and check the claims on every verify.
+ *
+ * Without `algorithms`, jsonwebtoken honours the token's own `alg` header — the
+ * classic forgery is to re-sign with "none", or to hand an HMAC a token claiming
+ * RS256 so the public key is used as the shared secret. Issuer and audience are
+ * checked so a token minted for another service cannot be replayed here.
+ */
+const VERIFY_OPTIONS = {
+  algorithms: [config.auth.jwtAlgorithm],
+  issuer: config.auth.jwtIssuer,
+  audience: config.auth.jwtAudience,
+};
+
 const requireAuth = (req, _res, next) => {
   const header = req.headers.authorization || "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : null;
   if (!token) return next(unauthorized("Authentication required"));
   try {
-    const payload = jwt.verify(token, config.auth.jwtSecret);
+    const payload = jwt.verify(token, config.auth.jwtSecret, VERIFY_OPTIONS);
     req.user = {
       id: payload.id,
       email: payload.email,
@@ -49,7 +63,7 @@ const optionalAuth = (req, _res, next) => {
   const token = header.startsWith("Bearer ") ? header.slice(7) : null;
   if (token) {
     try {
-      const payload = jwt.verify(token, config.auth.jwtSecret);
+      const payload = jwt.verify(token, config.auth.jwtSecret, VERIFY_OPTIONS);
       req.user = { id: payload.id, email: payload.email, role: payload.role || "customer" };
     } catch {
       /* ignore invalid token — treat as guest */

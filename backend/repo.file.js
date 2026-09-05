@@ -1,5 +1,6 @@
 /** File-data implementation of the repository (USE_FILE_DATA=true). */
 const { db, nextUserId, nextOrderId } = require("./fileStore");
+const { generateOrderNumber } = require("./lib/orderNumber");
 
 const clone = (x) => JSON.parse(JSON.stringify(x));
 
@@ -131,7 +132,7 @@ async function createOrder({
   idempotencyKey,
 }) {
   const id = nextOrderId();
-  const orderNumber = `FL${id}`;
+  const orderNumber = generateOrderNumber();
   const order = {
     id,
     orderNumber,

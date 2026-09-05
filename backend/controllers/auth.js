@@ -38,7 +38,10 @@ const googleLogin = async (req, res) => {
   const role = user.role || "customer";
 
   const token = jwt.sign({ id: user.id, email: user.email, role }, config.auth.jwtSecret, {
+    algorithm: config.auth.jwtAlgorithm,
     expiresIn: config.auth.jwtExpiresIn,
+    issuer: config.auth.jwtIssuer,
+    audience: config.auth.jwtAudience,
   });
 
   res.json({

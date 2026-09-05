@@ -1,5 +1,6 @@
 /** MySQL implementation of the repository. Parameterized SQL via dbClient. */
 const { query, withTransaction } = require("./dbClient");
+const { generateOrderNumber } = require("./lib/orderNumber");
 
 // --- users ---
 async function findUserById(id) {
@@ -131,10 +132,15 @@ async function createOrder({
   idempotencyKey,
 }) {
   return withTransaction(async (q) => {
+    // Generated before the INSERT, not derived from insertId afterwards: the
+    // old two-step left every order briefly untrackable, and tied the public
+    // number to a sequential database id.
+    const orderNumber = generateOrderNumber();
     const result = await q(
-      `INSERT INTO orders (user_id, status, total_minor, currency, fulfillment, payment, contact)
-       VALUES (?, 'pending', ?, ?, ?, ?, ?)`,
+      `INSERT INTO orders (order_number, user_id, status, total_minor, currency, fulfillment, payment, contact)
+       VALUES (?, ?, 'pending', ?, ?, ?, ?, ?)`,
       [
+        orderNumber,
         userId || null,
         totalMinor,
         currency,
@@ -145,10 +151,6 @@ async function createOrder({
       { op: "createOrder.insert" }
     );
     const orderId = result.insertId;
-    const orderNumber = `FL${orderId}`;
-    await q("UPDATE orders SET order_number = ? WHERE id = ?", [orderNumber, orderId], {
-      op: "createOrder.number",
-    });
 
     // Snapshot the price and name as charged. Reading these back from a live
     // join to `products` would mean editing a product silently rewrites every

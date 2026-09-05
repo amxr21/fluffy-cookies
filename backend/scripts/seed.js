@@ -31,10 +31,18 @@ const PRODUCTS = [
     database: config.db.name,
   });
   try {
-    for (const [name, description, price, image, category] of PRODUCTS) {
+    // Seeding must be idempotent: product ids are the contract the storefront
+    // sends as `product_id`, so a second blind run would duplicate every row and
+    // shift the ids the frontend menu is pinned to. Insert at an explicit id and
+    // update in place on re-run.
+    for (const [index, [name, description, price, image, category]] of PRODUCTS.entries()) {
       await conn.execute(
-        "INSERT INTO products (name, description, price, image, category) VALUES (?, ?, ?, ?, ?)",
-        [name, description, price, image, category]
+        `INSERT INTO products (id, name, description, price, image, category)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           name = VALUES(name), description = VALUES(description),
+           price = VALUES(price), image = VALUES(image), category = VALUES(category)`,
+        [index + 1, name, description, price, image, category]
       );
     }
     console.log(`✓ Seeded ${PRODUCTS.length} products`);

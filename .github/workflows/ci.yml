@@ -104,7 +104,9 @@ jobs:
         # on a live API at build time would pass here and fail on deploy. If the
         # build needs data, it must handle the fetch failing.
         env:
-          NEXT_PUBLIC_API_URL: http://localhost:9999/api/v1
+          # Origin only. lib/config.ts appends the /api/v1 prefix, so setting it
+          # here too would produce /api/v1/api/v1.
+          NEXT_PUBLIC_API_URL: http://localhost:9999
           NEXT_PUBLIC_GOOGLE_CLIENT_ID: ci-dummy.apps.googleusercontent.com
         run: pnpm --filter ./frontend build
 
@@ -147,6 +149,86 @@ jobs:
           LOG_CONSOLE: 'false'
         run: pnpm --filter ./backend test
 
+  backend-migrations:
+    name: Backend · Migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # The one job that needs a real database. Everything else runs against the
+    # in-memory store, but migrations are SQL — the only way to know they are
+    # valid is to execute them against the engine they target.
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
+          MYSQL_DATABASE: fluffy_ci
+        ports:
+          - 3306:3306
+        # Without a health check the job races the container: MySQL accepts TCP
+        # connections seconds before it will accept queries.
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Apply migrations to a fresh database
+        env:
+          # USE_FILE_DATA deliberately OFF — this job is the one that talks SQL.
+          DB_HOST: 127.0.0.1
+          DB_PORT: '3306'
+          DB_USER: root
+          DB_PASSWORD: ''
+          DB_NAME: fluffy_ci
+          JWT_SECRET: ci-only-secret-never-used-in-production
+          GOOGLE_CLIENT_ID: ci-dummy.apps.googleusercontent.com
+          LOG_CONSOLE: 'false'
+        run: pnpm --filter ./backend migrate
+
+      - name: Re-run to prove migrations are idempotent
+        # A second run must apply nothing. This catches a migration that was
+        # recorded but whose statements are not safely repeatable, and proves
+        # the schema_migrations bookkeeping actually works.
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: '3306'
+          DB_USER: root
+          DB_PASSWORD: ''
+          DB_NAME: fluffy_ci
+          JWT_SECRET: ci-only-secret-never-used-in-production
+          GOOGLE_CLIENT_ID: ci-dummy.apps.googleusercontent.com
+          LOG_CONSOLE: 'false'
+        run: |
+          output=$(pnpm --filter ./backend migrate)
+          echo "$output"
+          if ! echo "$output" | grep -q "up to date"; then
+            echo "::error::Second migration run applied something — migrations are not idempotent"
+            exit 1
+          fi
+
+      - name: Seed the catalog
+        # Proves seed.js still matches the schema the migrations produce.
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: '3306'
+          DB_USER: root
+          DB_PASSWORD: ''
+          DB_NAME: fluffy_ci
+          JWT_SECRET: ci-only-secret-never-used-in-production
+          GOOGLE_CLIENT_ID: ci-dummy.apps.googleusercontent.com
+          LOG_CONSOLE: 'false'
+        run: pnpm --filter ./backend seed
+
   # ─── Aggregate gate ──────────────────────────────────────────────
   #
   # This is the ONE check to mark as required in branch protection. Adding a
@@ -164,6 +246,7 @@ jobs:
       - frontend-build
       - backend-lint
       - backend-test
+      - backend-migrations
     # `always()` so this still runs when a dependency failed — otherwise it
     # would be skipped, and a skipped required check blocks the PR forever.
     if: always()

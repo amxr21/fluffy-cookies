@@ -11,7 +11,10 @@ import { reportClientError } from "@/lib/clientLogger";
  *   { ok: false, status, error: { message, code }, data? }
  */
 
-export type ApiError = { message: string; code: string };
+/** `requestId` is present whenever the backend answered — it is the string a
+ *  customer can quote to make a failure findable in the logs. Absent on a
+ *  network error or timeout, where no request ever reached the server. */
+export type ApiError = { message: string; code: string; requestId?: string };
 
 export type FetchResult<T> =
   | { ok: true; status: number; data: T; error?: undefined }
@@ -72,16 +75,35 @@ export async function safeFetch<T = unknown>(
     }
 
     if (!res.ok) {
+      // The header is set by the backend on every response; the envelope also
+      // carries it. Prefer the body, fall back to the header — a proxy error
+      // page or a 502 has the header but no envelope.
+      //
+      // Read defensively: reading the requestId is a diagnostic nicety, and it
+      // must never be the reason a real 4xx is reported as a network failure.
+      let headerRequestId: string | undefined;
+      try {
+        headerRequestId = res.headers?.get("x-request-id") ?? undefined;
+      } catch {
+        /* no readable headers — carry on without the id */
+      }
       const maybe = body as { error?: ApiError } | null;
-      const error: ApiError =
-        maybe && typeof maybe === "object" && maybe.error
-          ? maybe.error
-          : { message: `Request failed (${res.status})`, code: "HTTP_ERROR" };
+      const envelope =
+        maybe && typeof maybe === "object" && maybe.error ? maybe.error : null;
+      const error: ApiError = envelope
+        ? { ...envelope, requestId: envelope.requestId ?? headerRequestId }
+        : {
+            message: `Request failed (${res.status})`,
+            code: "HTTP_ERROR",
+            requestId: headerRequestId,
+          };
+
       if (res.status >= 500) {
         reportClientError({
           source: "fetch",
           message: `${init.method || "GET"} ${path} -> ${res.status}: ${error.message}`,
           component: path,
+          requestId: error.requestId,
         });
       }
       return { ok: false, status: res.status, error, data: body };

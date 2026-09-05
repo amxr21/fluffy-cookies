@@ -8,6 +8,7 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "migrate": "node scripts/migrate.js",
+    "migrate:status": "node scripts/migrate.js --status",
     "seed": "node scripts/seed.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

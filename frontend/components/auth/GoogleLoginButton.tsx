@@ -53,7 +53,7 @@ export function GoogleLoginButton() {
   }, [menuOpen]);
 
   const handleCredential = async (response: { credential?: string }) => {
-    const result = await postJSON<AuthResponse>("/api/auth", {
+    const result = await postJSON<AuthResponse>("/auth", {
       id_token: response?.credential,
     });
     if (!result.ok || !result.data?.success) {

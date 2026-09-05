@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import Link from "next/link";
+import { FiX } from "react-icons/fi";
 
 import { cn } from "@/lib/utils";
 
@@ -81,7 +82,8 @@ function ToastItem({
 
   return (
     <div
-      role="status"
+      role={toast.variant === "error" ? "alert" : "status"}
+      aria-live={toast.variant === "error" ? "assertive" : "polite"}
       className={cn(
         "pointer-events-auto flex w-80 max-w-[90vw] overflow-hidden rounded-xl border border-navy/10 bg-white shadow-xl shadow-navy/10 transition-all duration-350 ease-out",
         entered && !leaving
@@ -108,10 +110,10 @@ function ToastItem({
       <button
         type="button"
         onClick={dismiss}
-        aria-label="Dismiss"
-        className="px-3 text-navy/40 transition-colors hover:text-navy"
+        aria-label="Dismiss notification"
+        className="grid shrink-0 place-items-center self-start p-3 text-navy/40 transition-colors hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy"
       >
-        ✕
+        <FiX aria-hidden className="size-4" />
       </button>
     </div>
   );
@@ -141,7 +143,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={api}>
       {children}
-      <div className="pointer-events-none fixed right-4 top-24 z-[1000000] flex flex-col gap-3">
+      {/* Right edge and stacking match the navbar (fixed inset-x-4 / md:inset-x-16,
+          top-4 / md:top-6) so toasts line up with it instead of jutting past.
+          z sits just above the navbar's z-50. */}
+      <div className="pointer-events-none fixed right-4 top-24 z-60 flex flex-col items-end gap-3 md:right-16 md:top-28">
         {toasts.map((t) => (
           <ToastItem key={t.id} toast={t} onDismiss={dismiss} />
         ))}

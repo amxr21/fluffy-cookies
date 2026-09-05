@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { FiX } from "react-icons/fi";
 import { useEffect, useRef, useState } from "react";
 
 import { useAuth } from "@/context/AuthContext";
@@ -36,6 +37,7 @@ export function GoogleLoginButton() {
   const toast = useToast();
   const [menuOpen, setMenuOpen] = useState(false);
   const [signInOpen, setSignInOpen] = useState(false);
+  const [avatarFailed, setAvatarFailed] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // close account menu on outside click
@@ -92,7 +94,12 @@ export function GoogleLoginButton() {
           const el = document.getElementById("googleSignIn");
           if (el) {
             el.innerHTML = "";
-            gsi.renderButton(el, { theme: "outline", size: "large", width: 280 });
+            gsi.renderButton(el, {
+              theme: "outline",
+              size: "large",
+              shape: "pill",
+              width: 280,
+            });
           }
         } catch (err) {
           reportClientError({
@@ -118,7 +125,9 @@ export function GoogleLoginButton() {
   };
 
   if (user) {
-    const hasPic = user.picture.trim().length > 0;
+    // Google avatar URLs expire and the host is allowlisted in next.config.ts;
+    // if either changes, fall back to the initial rather than an empty circle.
+    const hasPic = user.picture.trim().length > 0 && !avatarFailed;
     const first = user.name ? user.name.split(" ")[0] : "Account";
     return (
       <div className="relative" ref={menuRef}>
@@ -131,7 +140,15 @@ export function GoogleLoginButton() {
         >
           <span className="relative grid size-9 place-items-center overflow-hidden rounded-xl bg-navy/10 text-small font-bold text-navy ring-2 ring-transparent transition-all group-hover:ring-navy/30">
             {hasPic ? (
-              <Image fill src={user.picture} alt="" className="object-cover" />
+              <Image
+                fill
+                src={user.picture}
+                alt=""
+                sizes="36px"
+                referrerPolicy="no-referrer"
+                onError={() => setAvatarFailed(true)}
+                className="object-cover"
+              />
             ) : (
               first.charAt(0).toUpperCase()
             )}
@@ -186,7 +203,10 @@ export function GoogleLoginButton() {
         )}
       >
         <div
-          className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+          className={cn(
+            "absolute inset-0 bg-black/40 transition-all duration-300",
+            signInOpen ? "backdrop-blur-md" : "backdrop-blur-none"
+          )}
           onClick={() => setSignInOpen(false)}
         />
         <div
@@ -200,16 +220,19 @@ export function GoogleLoginButton() {
           <button
             type="button"
             onClick={() => setSignInOpen(false)}
-            aria-label="Close"
-            className="absolute right-3 top-3 text-navy/40 transition-colors hover:text-navy"
+            aria-label="Close sign-in dialog"
+            className="absolute right-3 top-3 grid place-items-center rounded-lg p-1.5 text-navy/40 transition-colors hover:bg-navy/5 hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy"
           >
-            ✕
+            <FiX aria-hidden className="size-4" />
           </button>
           <h2 className="text-h3 font-bold text-navy">Welcome to Fluffy</h2>
           <p className="-mt-2 text-small text-navy/70">
             Sign in to save your cart, liked items, and track orders.
           </p>
-          <div id="googleSignIn" className="flex min-h-[44px] justify-center" />
+          <div
+            id="googleSignIn"
+            className="flex min-h-[44px] justify-center overflow-hidden rounded-full"
+          />
           <p className="text-caption text-navy/40">
             We only use your Google account to identify you.
           </p>

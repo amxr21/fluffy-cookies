@@ -143,6 +143,7 @@ async function createOrder({
   currency,
   idempotencyKey,
   discount,
+  shipping,
 }) {
   return withTransaction(async (q) => {
     // Reserve stock BEFORE creating anything. A failure here rolls the whole
@@ -170,6 +171,8 @@ async function createOrder({
         totalMinor,
         discount?.code || null,
         discount?.amountMinor || 0,
+        shipping?.feeMinor || 0,
+        shipping?.zoneId || null,
         currency,
         fulfillment,
         payment,

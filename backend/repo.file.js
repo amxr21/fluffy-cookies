@@ -136,6 +136,7 @@ async function createOrder({
   currency,
   idempotencyKey,
   discount,
+  shipping,
 }) {
   // Reserve before creating anything, and unwind on failure — the MySQL path
   // gets this from the transaction; here it has to be explicit.
@@ -166,6 +167,8 @@ async function createOrder({
     currency,
     discount_code: discount?.code || null,
     discount_minor: discount?.amountMinor || 0,
+    shipping_minor: shipping?.feeMinor || 0,
+    shipping_zone: shipping?.zoneId || null,
     fulfillment,
     payment,
     contact,

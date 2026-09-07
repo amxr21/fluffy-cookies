@@ -68,4 +68,38 @@ const getOrder = async (req, res) => {
   });
 };
 
-module.exports = { setOrderStatus, getOrder };
+/** Stock levels for every product, with low-stock flagged for the dashboard. */
+const listStock = async (_req, res) => {
+  const rows = await repo.listStock();
+  res.json(
+    rows.map((row) => ({
+      ...row,
+      lowStock: row.trackStock && row.available <= row.lowStockThreshold,
+    }))
+  );
+};
+
+/**
+ * Set a counted stock level.
+ *
+ * Deliberately absolute, not a delta: an operator counting a shelf knows how
+ * many are there, not how many have changed since they last looked. The ledger
+ * records the difference.
+ */
+const setStock = async (req, res) => {
+  const { productId } = req.params;
+  const { onHand, trackStock, lowStockThreshold } = req.body;
+
+  const result = await repo.setStock({
+    productId,
+    onHand,
+    trackStock,
+    lowStockThreshold,
+    actorId: req.user.id,
+  });
+  if (!result) throw notFound("Product not found");
+
+  res.json(await repo.getStock(productId));
+};
+
+module.exports = { setOrderStatus, getOrder, listStock, setStock };

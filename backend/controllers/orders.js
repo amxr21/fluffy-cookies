@@ -1,6 +1,6 @@
 /** Order controllers — create (checkout), history, track-by-number. */
 const repo = require("../repo");
-const { notFound, badRequest, forbidden } = require("../errors/AppError");
+const { notFound, badRequest, forbidden, conflict } = require("../errors/AppError");
 const {
   assertMinor,
   lineTotal,
@@ -70,6 +70,14 @@ const createOrder = async (req, res) => {
     currency: DEFAULT_CURRENCY,
     idempotencyKey,
   });
+
+  // The repository refuses rather than overselling; surface it as a 409 naming
+  // the product, so the cart page can point at the line to change.
+  if (order.outOfStock) {
+    throw conflict(
+      `Sorry — ${order.outOfStock.name || "an item"} sold out while you were checking out. Please adjust your cart.`
+    );
+  }
 
   if (userId) await repo.clearCart(userId);
 

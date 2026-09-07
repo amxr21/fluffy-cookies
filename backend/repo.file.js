@@ -131,6 +131,17 @@ async function createOrder({
   currency,
   idempotencyKey,
 }) {
+  // Reserve before creating anything, and unwind on failure — the MySQL path
+  // gets this from the transaction; here it has to be explicit.
+  const reserved = [];
+  for (const it of items) {
+    if (!reserveStockSync(it.product_id, it.quantity)) {
+      for (const done of reserved) releaseStockSync(done.product_id, done.quantity);
+      return { outOfStock: { productId: it.product_id, name: it.name } };
+    }
+    reserved.push(it);
+  }
+
   const id = nextOrderId();
   const orderNumber = generateOrderNumber();
   const order = {
@@ -155,6 +166,15 @@ async function createOrder({
     createdAt: new Date().toISOString(),
   };
   db.orders.push(order);
+  for (const it of items) {
+    recordStockMovementSync({
+      productId: it.product_id,
+      delta: -it.quantity,
+      reason: "reserved",
+      refType: "order",
+      refId: orderNumber,
+    });
+  }
   // Placement is the first history event — `from` is null, the order came
   // from nowhere.
   db.order_events.push({
@@ -265,6 +285,34 @@ async function updateOrderStatus({ orderId, from, to, actorId, note }) {
     created_at: new Date().toISOString(),
   });
 
+  // Settle the reservation alongside the status change — see the note in
+  // repo.mysql.js.
+  if (to === "cancelled" || to === "completed") {
+    for (const line of order.items || []) {
+      if (to === "cancelled") {
+        releaseStockSync(line.product_id, line.quantity);
+        recordStockMovementSync({
+          productId: line.product_id,
+          delta: line.quantity,
+          reason: "cancelled",
+          refType: "order",
+          refId: order.orderNumber,
+          actorId,
+        });
+      } else {
+        consumeStockSync(line.product_id, line.quantity);
+        recordStockMovementSync({
+          productId: line.product_id,
+          delta: 0,
+          reason: "collected",
+          refType: "order",
+          refId: order.orderNumber,
+          actorId,
+        });
+      }
+    }
+  }
+
   return { orderId: Number(orderId), from: current, to };
 }
 
@@ -287,6 +335,94 @@ async function findOrderIdByNumber(orderNumber) {
   return order ? { id: order.id, status: order.status } : null;
 }
 
+// --- inventory ---
+const stockRow = (productId) =>
+  db.inventory.find((r) => r.product_id === Number(productId));
+
+/** Mirrors the MySQL conditional UPDATE: check and decrement are one step. */
+function reserveStockSync(productId, quantity) {
+  const row = stockRow(productId);
+  if (!row) return true; // no inventory row = not tracked
+  if (!row.track_stock) return true;
+  if (row.on_hand - row.reserved < quantity) return false;
+  row.reserved += quantity;
+  return true;
+}
+
+function releaseStockSync(productId, quantity) {
+  const row = stockRow(productId);
+  if (row) row.reserved = Math.max(row.reserved - quantity, 0);
+}
+
+function consumeStockSync(productId, quantity) {
+  const row = stockRow(productId);
+  if (!row || !row.track_stock) return;
+  row.on_hand = Math.max(row.on_hand - quantity, 0);
+  row.reserved = Math.max(row.reserved - quantity, 0);
+}
+
+function recordStockMovementSync({ productId, delta, reason, refType, refId, actorId }) {
+  db.inventory_ledger.push({
+    id: db.inventory_ledger.length + 1,
+    product_id: Number(productId),
+    delta,
+    reason,
+    ref_type: refType || null,
+    ref_id: refId || null,
+    actor_id: actorId || null,
+    created_at: new Date().toISOString(),
+  });
+}
+
+async function getStock(productId) {
+  const row = stockRow(productId);
+  if (!row) return null;
+  return {
+    productId: row.product_id,
+    onHand: row.on_hand,
+    reserved: row.reserved,
+    available: row.on_hand - row.reserved,
+    lowStockThreshold: row.low_stock_threshold,
+    trackStock: !!row.track_stock,
+  };
+}
+
+async function listStock() {
+  return db.inventory.map((row) => {
+    const product = db.products.find((p) => p.id === row.product_id);
+    return {
+      productId: row.product_id,
+      name: product?.name ?? "",
+      onHand: row.on_hand,
+      reserved: row.reserved,
+      available: row.on_hand - row.reserved,
+      lowStockThreshold: row.low_stock_threshold,
+      trackStock: !!row.track_stock,
+    };
+  });
+}
+
+async function setStock({ productId, onHand, trackStock, lowStockThreshold, actorId }) {
+  const row = stockRow(productId);
+  if (!row) return null;
+
+  const previous = row.on_hand;
+  if (onHand !== undefined) row.on_hand = onHand;
+  if (trackStock !== undefined) row.track_stock = trackStock ? 1 : 0;
+  if (lowStockThreshold !== undefined) row.low_stock_threshold = lowStockThreshold;
+
+  if (onHand !== undefined && onHand !== previous) {
+    recordStockMovementSync({
+      productId,
+      delta: onHand - previous,
+      reason: "adjustment",
+      refType: "manual",
+      actorId,
+    });
+  }
+  return { productId: Number(productId), onHand: row.on_hand, previousOnHand: previous };
+}
+
 module.exports = {
   findUserById,
   upsertGoogleUser,
@@ -301,6 +437,9 @@ module.exports = {
   toggleLike,
   createOrder,
   findOrderByIdempotencyKey,
+  getStock,
+  listStock,
+  setStock,
   updateOrderStatus,
   getOrderEvents,
   findOrderIdByNumber,

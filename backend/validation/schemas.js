@@ -48,6 +48,19 @@ const orderStatusSchema = z.object({
   note: z.string().max(500).optional(),
 });
 
+const productIdParam = z.object({ productId: id });
+
+const stockSchema = z
+  .object({
+    onHand: z.coerce.number().int().min(0).max(1000000).optional(),
+    trackStock: z.coerce.boolean().optional(),
+    lowStockThreshold: z.coerce.number().int().min(0).max(10000).optional(),
+  })
+  // An empty body would silently do nothing and report success.
+  .refine((v) => Object.keys(v).length > 0, {
+    message: "Provide at least one of onHand, trackStock or lowStockThreshold",
+  });
+
 const orderNumberParam = z.object({
   orderNumber: z.string().min(2).max(40),
 });
@@ -62,4 +75,6 @@ module.exports = {
   orderSchema,
   orderNumberParam,
   orderStatusSchema,
+  productIdParam,
+  stockSchema,
 };

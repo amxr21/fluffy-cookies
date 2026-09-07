@@ -167,6 +167,14 @@ async function createOrder({
     // Claim the key inside the same transaction as the order. A concurrent
     // duplicate hits the PRIMARY KEY and its whole transaction rolls back, so
     // the race cannot produce two orders.
+    // Placement is the first history event — `from` is NULL because the order
+    // came from nowhere.
+    await q(
+      "INSERT INTO order_events (order_id, from_status, to_status) VALUES (?, NULL, 'pending')",
+      [orderId],
+      { op: "createOrder.event" }
+    );
+
     if (idempotencyKey) {
       await q(
         "INSERT INTO order_idempotency (idempotency_key, user_id, order_id) VALUES (?, ?, ?)",
@@ -280,6 +288,66 @@ async function deleteExpiredSessions() {
   return result.affectedRows || 0;
 }
 
+// --- order status ---
+/**
+ * Move an order to a new status and record the move, atomically.
+ *
+ * The row is re-read inside the transaction with FOR UPDATE and the caller's
+ * expected `from` is checked against it. Two admins pressing "Ready" at the
+ * same moment would otherwise both read "preparing", both pass the transition
+ * check in the service layer, and both write — producing two history rows for
+ * one real transition.
+ */
+async function updateOrderStatus({ orderId, from, to, actorId, note }) {
+  return withTransaction(async (q) => {
+    const rows = await q(
+      "SELECT status FROM orders WHERE id = ? FOR UPDATE",
+      [orderId],
+      { op: "updateOrderStatus.lock" }
+    );
+    if (!rows.length) return null;
+
+    const current = rows[0].status;
+    // The caller already validated the transition; this catches the row having
+    // moved between that check and this write.
+    if (from !== undefined && current !== from) {
+      return { conflict: true, current };
+    }
+
+    await q("UPDATE orders SET status = ? WHERE id = ?", [to, orderId], {
+      op: "updateOrderStatus.set",
+    });
+    await q(
+      `INSERT INTO order_events (order_id, from_status, to_status, actor_id, note)
+       VALUES (?, ?, ?, ?, ?)`,
+      [orderId, current, to, actorId || null, note || null],
+      { op: "updateOrderStatus.event" }
+    );
+
+    return { orderId, from: current, to };
+  });
+}
+
+async function getOrderEvents(orderId) {
+  return query(
+    `SELECT from_status AS fromStatus, to_status AS toStatus, actor_id AS actorId,
+            note, created_at AS createdAt
+     FROM order_events WHERE order_id = ? ORDER BY created_at, id`,
+    [orderId],
+    { op: "getOrderEvents" }
+  );
+}
+
+/** Find an order by its public number, for an admin acting on it. */
+async function findOrderIdByNumber(orderNumber) {
+  const rows = await query(
+    "SELECT id, status FROM orders WHERE order_number = ?",
+    [orderNumber],
+    { op: "findOrderIdByNumber" }
+  );
+  return rows[0] || null;
+}
+
 module.exports = {
   findUserById,
   upsertGoogleUser,
@@ -294,6 +362,9 @@ module.exports = {
   toggleLike,
   createOrder,
   findOrderByIdempotencyKey,
+  updateOrderStatus,
+  getOrderEvents,
+  findOrderIdByNumber,
   createSession,
   findSessionByTokenHash,
   markSessionUsed,

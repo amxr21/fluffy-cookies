@@ -31,6 +31,10 @@ const orderSchema = z.object({
     .object({
       name: z.string().optional(),
       phone: z.string().optional(),
+      // Optional: a customer collecting in person may not want to give one,
+      // and the order must still be placeable. No email simply means no
+      // confirmation — see email/mailer.js.
+      email: z.string().email().max(254).optional(),
       address: z.string().optional(),
       city: z.string().optional(),
       note: z.string().optional(),

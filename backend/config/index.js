@@ -56,6 +56,13 @@ const config = {
     jwtAudience: process.env.JWT_AUDIENCE || "fluffy-storefront",
   },
 
+  email: {
+    // Unset means the console adapter: the whole pipeline runs, nothing is
+    // sent. Lets development and CI exercise email without a vendor account.
+    resendApiKey: process.env.RESEND_API_KEY || "",
+    from: process.env.EMAIL_FROM || "Fluffy <orders@fluffy.ae>",
+  },
+
   logging: {
     level: process.env.LOG_LEVEL || (env === "production" ? "info" : "debug"),
     console: bool(process.env.LOG_CONSOLE, env !== "production"),

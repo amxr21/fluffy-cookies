@@ -58,6 +58,7 @@ function toOwnerOrder(order) {
     contact: {
       name: contact.name,
       phone: contact.phone,
+      email: contact.email,
       address: contact.address,
       city: contact.city,
       note: contact.note,

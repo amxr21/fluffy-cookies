@@ -30,8 +30,13 @@ async function upsertGoogleUser({ googleId, email, name, picture }) {
 }
 
 // --- products ---
-async function listProducts() {
-  return clone(db.products);
+async function listProducts({ limit, offset } = {}) {
+  const all = clone(db.products);
+  return limit == null ? all : all.slice(offset, offset + limit);
+}
+
+async function countProducts() {
+  return db.products.length;
 }
 async function findProductById(id) {
   return clone(db.products.find((p) => p.id === Number(id)) || null);
@@ -213,8 +218,17 @@ async function createOrder({
   }
   return clone(order);
 }
-async function getOrdersByUser(userId) {
-  return clone(db.orders.filter((o) => o.user_id === Number(userId)));
+async function getOrdersByUser(userId, { limit, offset } = {}) {
+  const mine = clone(
+    db.orders
+      .filter((o) => o.user_id === Number(userId))
+      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+  );
+  return limit == null ? mine : mine.slice(offset, offset + limit);
+}
+
+async function countOrdersByUser(userId) {
+  return db.orders.filter((o) => o.user_id === Number(userId)).length;
 }
 async function getOrderByNumber(orderNumber) {
   return clone(db.orders.find((o) => o.orderNumber === orderNumber) || null);
@@ -494,6 +508,8 @@ module.exports = {
   findUserById,
   upsertGoogleUser,
   listProducts,
+  countProducts,
+  countOrdersByUser,
   findProductById,
   getCart,
   addToCart,

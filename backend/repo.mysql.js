@@ -33,8 +33,20 @@ async function upsertGoogleUser({ googleId, email, name, picture }) {
 }
 
 // --- products ---
-async function listProducts() {
-  return query("SELECT * FROM products ORDER BY id", [], { op: "listProducts" });
+async function listProducts({ limit, offset } = {}) {
+  if (limit == null) {
+    return query("SELECT * FROM products ORDER BY id", [], { op: "listProducts" });
+  }
+  return query("SELECT * FROM products ORDER BY id LIMIT ? OFFSET ?", [limit, offset], {
+    op: "listProducts",
+  });
+}
+
+async function countProducts() {
+  const rows = await query("SELECT COUNT(*) AS n FROM products", [], {
+    op: "countProducts",
+  });
+  return Number(rows[0]?.n || 0);
 }
 async function findProductById(id) {
   const rows = await query("SELECT * FROM products WHERE id = ?", [id], { op: "findProductById" });
@@ -235,11 +247,21 @@ const ORDER_SELECT = `
          o.fulfillment, o.created_at AS createdAt
   FROM orders o`;
 
-async function getOrdersByUser(userId) {
-  const orders = await query(`${ORDER_SELECT} WHERE o.user_id = ? ORDER BY o.created_at DESC`, [userId], {
-    op: "getOrdersByUser",
-  });
+async function getOrdersByUser(userId, { limit, offset } = {}) {
+  const sql =
+    limit == null
+      ? `${ORDER_SELECT} WHERE o.user_id = ? ORDER BY o.created_at DESC`
+      : `${ORDER_SELECT} WHERE o.user_id = ? ORDER BY o.created_at DESC LIMIT ? OFFSET ?`;
+  const params = limit == null ? [userId] : [userId, limit, offset];
+  const orders = await query(sql, params, { op: "getOrdersByUser" });
   return Promise.all(orders.map(withItems));
+}
+
+async function countOrdersByUser(userId) {
+  const rows = await query("SELECT COUNT(*) AS n FROM orders WHERE user_id = ?", [userId], {
+    op: "countOrdersByUser",
+  });
+  return Number(rows[0]?.n || 0);
 }
 async function getOrderByNumber(orderNumber) {
   const rows = await query(`${ORDER_SELECT} WHERE o.order_number = ?`, [orderNumber], {
@@ -619,6 +641,8 @@ module.exports = {
   findUserById,
   upsertGoogleUser,
   listProducts,
+  countProducts,
+  countOrdersByUser,
   findProductById,
   getCart,
   addToCart,

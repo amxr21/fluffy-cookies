@@ -8,6 +8,8 @@ const {
   DEFAULT_CURRENCY,
 } = require("../lib/money");
 const { toPublicOrder, toOwnerOrder } = require("../lib/orderView");
+const { readPageParams, paginated } = require("../lib/pagination");
+const mailer = require("../email/mailer");
 const {
   normalizeCode,
   validateDiscount,
@@ -123,6 +125,24 @@ const createOrder = async (req, res) => {
 
   if (userId) await repo.clearCart(userId);
 
+  // Fire-and-forget: the order exists and matters more than its confirmation.
+  // `send` never throws, and the `.catch` is belt-and-braces against a future
+  // change making it do so — an unhandled rejection here would crash the
+  // process long after the response went out.
+  void mailer
+    .send("orderConfirmed", contact?.email, {
+      orderNumber: order.orderNumber,
+      totalMinor: order.totalMinor,
+      currency: order.currency,
+      items: priced.map((line) => ({
+        name_snapshot: line.name,
+        quantity: line.quantity,
+        unit_price_minor: line.unitPriceMinor,
+        currency: order.currency,
+      })),
+    })
+    .catch(() => {});
+
   res.status(201).json({
     orderNumber: order.orderNumber,
     subtotalMinor,
@@ -143,8 +163,12 @@ const myOrders = async (req, res) => {
   if (String(req.user.id) !== String(req.params.userId)) {
     throw forbidden("You can only view your own orders");
   }
-  const orders = await repo.getOrdersByUser(req.user.id);
-  res.json(orders.map(toOwnerOrder));
+  const { limit, offset } = readPageParams(req.query);
+  const [orders, total] = await Promise.all([
+    repo.getOrdersByUser(req.user.id, { limit, offset }),
+    repo.countOrdersByUser(req.user.id),
+  ]);
+  res.json(paginated(orders.map(toOwnerOrder), { limit, offset, total }));
 };
 
 const trackOrder = async (req, res) => {

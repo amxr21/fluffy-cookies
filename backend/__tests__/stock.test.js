@@ -275,7 +275,7 @@ describe("admin stock endpoints", () => {
       .set("Cookie", `${ACCESS_COOKIE}=${adminToken()}`);
 
     expect(res.status).toBe(200);
-    const row = res.body.find((r) => r.productId === PRODUCT);
+    const row = res.body.data.find((r) => r.productId === PRODUCT);
     expect(row).toMatchObject({ onHand: 3, available: 3, lowStock: true });
   });
 

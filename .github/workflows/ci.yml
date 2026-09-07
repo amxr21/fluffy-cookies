@@ -99,14 +99,10 @@ jobs:
       - name: Build
         # Dummy build-time env. The real values live in the host's dashboard;
         # these exist only so the build can resolve `process.env` references.
-        #
-        # The API URL is deliberately unreachable: a build that silently depends
-        # on a live API at build time would pass here and fail on deploy. If the
-        # build needs data, it must handle the fetch failing.
         env:
-          # Origin only. lib/config.ts appends the /api/v1 prefix, so setting it
-          # here too would produce /api/v1/api/v1.
-          NEXT_PUBLIC_API_URL: http://localhost:9999
+          # No API URL: the browser calls this app's own origin and
+          # next.config.ts proxies server-side, so the client bundle needs no
+          # backend address. API_ORIGIN is only read at request time.
           NEXT_PUBLIC_GOOGLE_CLIENT_ID: ci-dummy.apps.googleusercontent.com
         run: pnpm --filter ./frontend build
 
@@ -144,7 +140,7 @@ jobs:
         # the repo seam — see backend/repo.js.
         env:
           USE_FILE_DATA: 'true'
-          JWT_SECRET: ci-only-secret-never-used-in-production
+          JWT_SECRET: ci-only-secret-never-used-in-production-32-plus
           GOOGLE_CLIENT_ID: ci-dummy.apps.googleusercontent.com
           LOG_CONSOLE: 'false'
         run: pnpm --filter ./backend test
@@ -190,7 +186,7 @@ jobs:
           DB_USER: root
           DB_PASSWORD: ''
           DB_NAME: fluffy_ci
-          JWT_SECRET: ci-only-secret-never-used-in-production
+          JWT_SECRET: ci-only-secret-never-used-in-production-32-plus
           GOOGLE_CLIENT_ID: ci-dummy.apps.googleusercontent.com
           LOG_CONSOLE: 'false'
         run: pnpm --filter ./backend migrate
@@ -205,7 +201,7 @@ jobs:
           DB_USER: root
           DB_PASSWORD: ''
           DB_NAME: fluffy_ci
-          JWT_SECRET: ci-only-secret-never-used-in-production
+          JWT_SECRET: ci-only-secret-never-used-in-production-32-plus
           GOOGLE_CLIENT_ID: ci-dummy.apps.googleusercontent.com
           LOG_CONSOLE: 'false'
         run: |
@@ -224,7 +220,7 @@ jobs:
           DB_USER: root
           DB_PASSWORD: ''
           DB_NAME: fluffy_ci
-          JWT_SECRET: ci-only-secret-never-used-in-production
+          JWT_SECRET: ci-only-secret-never-used-in-production-32-plus
           GOOGLE_CLIENT_ID: ci-dummy.apps.googleusercontent.com
           LOG_CONSOLE: 'false'
         run: pnpm --filter ./backend seed

@@ -1,12 +1,14 @@
 /** Order controllers — create (checkout), history, track-by-number. */
 const repo = require("../repo");
-const { notFound, badRequest } = require("../errors/AppError");
+const { notFound, badRequest, forbidden } = require("../errors/AppError");
 const {
   assertMinor,
   lineTotal,
   sumMinor,
   DEFAULT_CURRENCY,
 } = require("../lib/money");
+const { toPublicOrder, toOwnerOrder } = require("../lib/orderView");
+const { normalizeOrderNumber, isValidOrderNumber } = require("../lib/orderNumber");
 
 const createOrder = async (req, res) => {
   const { fulfillment, payment, contact, items } = req.body;
@@ -79,17 +81,34 @@ const createOrder = async (req, res) => {
 };
 
 const myOrders = async (req, res) => {
-  // userId param must match the authenticated user.
+  // The :userId in the path must be the caller's own.
+  //
+  // Answered with 403, not an empty list: "[]" is indistinguishable from "you
+  // have no orders", so a client cannot tell a real empty state from a refusal
+  // and neither can a log. The standard asks for unauthorised to be its own
+  // designed state.
   if (String(req.user.id) !== String(req.params.userId)) {
-    return res.json([]);
+    throw forbidden("You can only view your own orders");
   }
-  res.json(await repo.getOrdersByUser(req.user.id));
+  const orders = await repo.getOrdersByUser(req.user.id);
+  res.json(orders.map(toOwnerOrder));
 };
 
 const trackOrder = async (req, res) => {
-  const order = await repo.getOrderByNumber(req.params.orderNumber);
+  // Tolerate how a customer actually types a number read off a phone: lowercase,
+  // spaced, with O for 0. Rejecting a well-formed-but-wrong shape before the
+  // lookup also keeps junk from reaching the database on a scraping run.
+  const orderNumber = normalizeOrderNumber(req.params.orderNumber);
+  if (!isValidOrderNumber(orderNumber) && !/^FL\d+$/.test(orderNumber)) {
+    throw notFound("Order not found");
+  }
+
+  const order = await repo.getOrderByNumber(orderNumber);
   if (!order) throw notFound("Order not found");
-  res.json(order);
+
+  // Public view only — this route has no auth, so anything returned here is
+  // readable by anyone holding an order number. See lib/orderView.js.
+  res.json(toPublicOrder(order));
 };
 
 module.exports = { createOrder, myOrders, trackOrder };

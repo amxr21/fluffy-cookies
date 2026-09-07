@@ -1,5 +1,6 @@
 /** MySQL implementation of the repository. Parameterized SQL via dbClient. */
 const { query, withTransaction } = require("./dbClient");
+const { generateOrderNumber } = require("./lib/orderNumber");
 
 // --- users ---
 async function findUserById(id) {
@@ -131,10 +132,15 @@ async function createOrder({
   idempotencyKey,
 }) {
   return withTransaction(async (q) => {
+    // Generated before the INSERT, not derived from insertId afterwards: the
+    // old two-step left every order briefly untrackable, and tied the public
+    // number to a sequential database id.
+    const orderNumber = generateOrderNumber();
     const result = await q(
-      `INSERT INTO orders (user_id, status, total_minor, currency, fulfillment, payment, contact)
-       VALUES (?, 'pending', ?, ?, ?, ?, ?)`,
+      `INSERT INTO orders (order_number, user_id, status, total_minor, currency, fulfillment, payment, contact)
+       VALUES (?, ?, 'pending', ?, ?, ?, ?, ?)`,
       [
+        orderNumber,
         userId || null,
         totalMinor,
         currency,
@@ -145,10 +151,6 @@ async function createOrder({
       { op: "createOrder.insert" }
     );
     const orderId = result.insertId;
-    const orderNumber = `FL${orderId}`;
-    await q("UPDATE orders SET order_number = ? WHERE id = ?", [orderNumber, orderId], {
-      op: "createOrder.number",
-    });
 
     // Snapshot the price and name as charged. Reading these back from a live
     // join to `products` would mean editing a product silently rewrites every
@@ -165,6 +167,14 @@ async function createOrder({
     // Claim the key inside the same transaction as the order. A concurrent
     // duplicate hits the PRIMARY KEY and its whole transaction rolls back, so
     // the race cannot produce two orders.
+    // Placement is the first history event — `from` is NULL because the order
+    // came from nowhere.
+    await q(
+      "INSERT INTO order_events (order_id, from_status, to_status) VALUES (?, NULL, 'pending')",
+      [orderId],
+      { op: "createOrder.event" }
+    );
+
     if (idempotencyKey) {
       await q(
         "INSERT INTO order_idempotency (idempotency_key, user_id, order_id) VALUES (?, ?, ?)",
@@ -208,6 +218,136 @@ async function withItems(order) {
   return { ...order, items };
 }
 
+// --- sessions ---
+/**
+ * Refresh-token sessions. The plaintext token never reaches this layer — the
+ * caller hashes it — so a database leak yields no working sessions.
+ */
+async function createSession({ id, userId, tokenHash, familyId, expiresAt, userAgent, ip }) {
+  await query(
+    `INSERT INTO sessions (id, user_id, token_hash, family_id, expires_at, user_agent, ip)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [id, userId, tokenHash, familyId, expiresAt, userAgent || null, ip || null],
+    { op: "createSession" }
+  );
+  return { id, familyId };
+}
+
+async function findSessionByTokenHash(tokenHash) {
+  const rows = await query(
+    `SELECT id, user_id AS userId, family_id AS familyId, used_at AS usedAt,
+            revoked_at AS revokedAt, expires_at AS expiresAt
+     FROM sessions WHERE token_hash = ?`,
+    [tokenHash],
+    { op: "findSessionByTokenHash" }
+  );
+  return rows[0] || null;
+}
+
+/** Mark a refresh token as exchanged. A second exchange is the reuse signal. */
+async function markSessionUsed(id) {
+  await query("UPDATE sessions SET used_at = CURRENT_TIMESTAMP WHERE id = ?", [id], {
+    op: "markSessionUsed",
+  });
+}
+
+async function revokeSession(id) {
+  await query("UPDATE sessions SET revoked_at = CURRENT_TIMESTAMP WHERE id = ?", [id], {
+    op: "revokeSession",
+  });
+}
+
+/** Reuse detected: every token descended from the same login is now suspect. */
+async function revokeSessionFamily(familyId) {
+  await query(
+    "UPDATE sessions SET revoked_at = CURRENT_TIMESTAMP WHERE family_id = ? AND revoked_at IS NULL",
+    [familyId],
+    { op: "revokeSessionFamily" }
+  );
+}
+
+async function revokeAllUserSessions(userId) {
+  await query(
+    "UPDATE sessions SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = ? AND revoked_at IS NULL",
+    [userId],
+    { op: "revokeAllUserSessions" }
+  );
+}
+
+/** Invalidate every access token already issued to this user. */
+async function bumpTokenVersion(userId) {
+  await query("UPDATE users SET token_version = token_version + 1 WHERE id = ?", [userId], {
+    op: "bumpTokenVersion",
+  });
+}
+
+async function deleteExpiredSessions() {
+  const result = await query("DELETE FROM sessions WHERE expires_at < CURRENT_TIMESTAMP", [], {
+    op: "deleteExpiredSessions",
+  });
+  return result.affectedRows || 0;
+}
+
+// --- order status ---
+/**
+ * Move an order to a new status and record the move, atomically.
+ *
+ * The row is re-read inside the transaction with FOR UPDATE and the caller's
+ * expected `from` is checked against it. Two admins pressing "Ready" at the
+ * same moment would otherwise both read "preparing", both pass the transition
+ * check in the service layer, and both write — producing two history rows for
+ * one real transition.
+ */
+async function updateOrderStatus({ orderId, from, to, actorId, note }) {
+  return withTransaction(async (q) => {
+    const rows = await q(
+      "SELECT status FROM orders WHERE id = ? FOR UPDATE",
+      [orderId],
+      { op: "updateOrderStatus.lock" }
+    );
+    if (!rows.length) return null;
+
+    const current = rows[0].status;
+    // The caller already validated the transition; this catches the row having
+    // moved between that check and this write.
+    if (from !== undefined && current !== from) {
+      return { conflict: true, current };
+    }
+
+    await q("UPDATE orders SET status = ? WHERE id = ?", [to, orderId], {
+      op: "updateOrderStatus.set",
+    });
+    await q(
+      `INSERT INTO order_events (order_id, from_status, to_status, actor_id, note)
+       VALUES (?, ?, ?, ?, ?)`,
+      [orderId, current, to, actorId || null, note || null],
+      { op: "updateOrderStatus.event" }
+    );
+
+    return { orderId, from: current, to };
+  });
+}
+
+async function getOrderEvents(orderId) {
+  return query(
+    `SELECT from_status AS fromStatus, to_status AS toStatus, actor_id AS actorId,
+            note, created_at AS createdAt
+     FROM order_events WHERE order_id = ? ORDER BY created_at, id`,
+    [orderId],
+    { op: "getOrderEvents" }
+  );
+}
+
+/** Find an order by its public number, for an admin acting on it. */
+async function findOrderIdByNumber(orderNumber) {
+  const rows = await query(
+    "SELECT id, status FROM orders WHERE order_number = ?",
+    [orderNumber],
+    { op: "findOrderIdByNumber" }
+  );
+  return rows[0] || null;
+}
+
 module.exports = {
   findUserById,
   upsertGoogleUser,
@@ -222,6 +362,17 @@ module.exports = {
   toggleLike,
   createOrder,
   findOrderByIdempotencyKey,
+  updateOrderStatus,
+  getOrderEvents,
+  findOrderIdByNumber,
+  createSession,
+  findSessionByTokenHash,
+  markSessionUsed,
+  revokeSession,
+  revokeSessionFamily,
+  revokeAllUserSessions,
+  bumpTokenVersion,
+  deleteExpiredSessions,
   getOrdersByUser,
   getOrderByNumber,
 };

@@ -41,6 +41,13 @@ const orderSchema = z.object({
     .min(1),
 });
 
+const orderStatusSchema = z.object({
+  // Validated as a plain string here; lib/orderStatus.js owns which values are
+  // legal AND which transitions are, so the vocabulary lives in one place.
+  status: z.string().min(1).max(32),
+  note: z.string().max(500).optional(),
+});
+
 const orderNumberParam = z.object({
   orderNumber: z.string().min(2).max(40),
 });
@@ -54,4 +61,5 @@ module.exports = {
   likeSchema,
   orderSchema,
   orderNumberParam,
+  orderStatusSchema,
 };

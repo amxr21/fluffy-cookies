@@ -49,6 +49,11 @@ const config = {
     googleVerifyTimeoutMs: Number(process.env.GOOGLE_VERIFY_TIMEOUT_MS) || 8000,
     jwtSecret: process.env.JWT_SECRET || "",
     jwtExpiresIn: process.env.JWT_EXPIRES_IN || "7d",
+    // Pinned explicitly on both sign and verify. Letting the token's own `alg`
+    // header choose is how "alg: none" forgeries work.
+    jwtAlgorithm: "HS256",
+    jwtIssuer: process.env.JWT_ISSUER || "fluffy-api",
+    jwtAudience: process.env.JWT_AUDIENCE || "fluffy-storefront",
   },
 
   logging: {
@@ -61,6 +66,9 @@ const config = {
 config.validate = () => {
   const missing = [];
   if (!config.auth.jwtSecret) missing.push("JWT_SECRET");
+  // 32 bytes is the standard's floor. A short secret is brute-forceable
+  // offline from a single captured token, so treat it as a missing one.
+  else if (config.auth.jwtSecret.length < 32) missing.push("JWT_SECRET (must be at least 32 characters)");
   if (!config.auth.googleClientId) missing.push("GOOGLE_CLIENT_ID");
   // DB creds only matter when actually using the DB.
   if (!config.useFileData) {

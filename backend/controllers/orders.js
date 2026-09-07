@@ -1,6 +1,6 @@
 /** Order controllers — create (checkout), history, track-by-number. */
 const repo = require("../repo");
-const { notFound, badRequest } = require("../errors/AppError");
+const { notFound, badRequest, forbidden } = require("../errors/AppError");
 const {
   assertMinor,
   lineTotal,
@@ -81,9 +81,14 @@ const createOrder = async (req, res) => {
 };
 
 const myOrders = async (req, res) => {
-  // userId param must match the authenticated user.
+  // The :userId in the path must be the caller's own.
+  //
+  // Answered with 403, not an empty list: "[]" is indistinguishable from "you
+  // have no orders", so a client cannot tell a real empty state from a refusal
+  // and neither can a log. The standard asks for unauthorised to be its own
+  // designed state.
   if (String(req.user.id) !== String(req.params.userId)) {
-    return res.json([]);
+    throw forbidden("You can only view your own orders");
   }
   const orders = await repo.getOrdersByUser(req.user.id);
   res.json(orders.map(toOwnerOrder));

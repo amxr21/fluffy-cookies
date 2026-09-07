@@ -1,8 +1,12 @@
 /** Likes / wishlist controllers — user from JWT. */
 const repo = require("../repo");
+const { forbidden } = require("../errors/AppError");
 
 const getLikes = async (req, res) => {
-  if (String(req.user.id) !== String(req.params.userId)) return res.json([]);
+  // 403 rather than an empty list — see the note in controllers/orders.js.
+  if (String(req.user.id) !== String(req.params.userId)) {
+    throw forbidden("You can only view your own liked items");
+  }
   res.json(await repo.getLikes(req.user.id));
 };
 

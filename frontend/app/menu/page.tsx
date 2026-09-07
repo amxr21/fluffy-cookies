@@ -2,6 +2,12 @@ import { MenuSection, PageHeader } from "@/components/sections";
 import { Container } from "@/components/ui/Container";
 import { MENU } from "@/lib/menu";
 
+export const metadata = {
+  title: "Menu",
+  description:
+    "Cookies, stuffed sweets and specialty drinks, baked fresh daily in Al Ain.",
+};
+
 export default function MenuPage() {
   return (
     <main className="flex-1">

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { Container } from "@/components/ui/Container";
 import { StatusState } from "@/components/ui/StatusState";
+import { SkeletonGroup, SkeletonRow } from "@/components/ui/Skeleton";
 import { OrderCard } from "@/components/order/OrderCard";
 import { useAuth } from "@/context/AuthContext";
 import { getJSON, type Paginated } from "@/lib/safeFetch";
@@ -12,7 +13,9 @@ import type { Order } from "@/lib/orders";
 export default function MyOrdersPage() {
   const { user } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
-  const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+  const [state, setState] = useState<
+    "loading" | "ready" | "error" | "forbidden"
+  >("loading");
 
   useEffect(() => {
     if (!user) {
@@ -26,6 +29,9 @@ export default function MyOrdersPage() {
       if (res.ok && Array.isArray(res.data?.data)) {
         setOrders(res.data.data);
         setState("ready");
+      } else if (res.status === 403) {
+        // Someone else's id in the URL. A different answer from "it broke".
+        setState("forbidden");
       } else {
         setState("error");
       }
@@ -48,12 +54,24 @@ export default function MyOrdersPage() {
             cta={{ label: "Track an order instead", href: "/track-order" }}
           />
         ) : state === "loading" ? (
-          <StatusState variant="loading" title="Loading your orders…" />
+          <SkeletonGroup label="Loading your orders" className="space-y-4">
+            <SkeletonRow />
+            <SkeletonRow />
+            <SkeletonRow />
+          </SkeletonGroup>
+        ) : state === "forbidden" ? (
+          <StatusState
+            variant="unauthorized"
+            title="That's not your account"
+            message="You can only see your own orders."
+            cta={{ label: "Back home", href: "/" }}
+          />
         ) : state === "error" ? (
           <StatusState
             variant="error"
             title="Couldn't load your orders"
             message="Please try again in a moment."
+            cta={{ label: "Reload", href: "/my-orders" }}
           />
         ) : orders.length === 0 ? (
           <StatusState

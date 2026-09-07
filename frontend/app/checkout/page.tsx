@@ -74,6 +74,16 @@ export default function CheckoutPage() {
   const [fulfillment, setFulfillment] = useState("Pickup");
   const [payment, setPayment] = useState<PaymentMethod>("cash");
   const [discount, setDiscount] = useState("");
+  /**
+   * What the server says the code is worth. Never computed client-side: the
+   * total shown must be the total charged, and only the server knows the rules.
+   */
+  const [applied, setApplied] = useState<{
+    code: string;
+    discountMinor: number;
+  } | null>(null);
+  const [discountMessage, setDiscountMessage] = useState<string | null>(null);
+  const [checkingCode, setCheckingCode] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   /** Field errors shown inline. Populated on submit, cleared as the user types. */
   const [errors, setErrors] = useState<Partial<Record<FormField, string>>>({});
@@ -83,6 +93,40 @@ export default function CheckoutPage() {
    * rather than a second order. Cleared only once an order is actually placed.
    */
   const idempotencyKey = useRef<string | null>(null);
+
+  const totalMinor = subtotalMinor - (applied?.discountMinor ?? 0);
+
+  /** Ask the server what the code is worth. Checking never spends a use. */
+  const applyDiscount = async () => {
+    const code = discount.trim();
+    if (!code) return;
+
+    setCheckingCode(true);
+    const res = await postJSON<{
+      valid: boolean;
+      code?: string;
+      discountMinor?: number;
+      message?: string;
+    }>("/orders/discount/check", { code, subtotal_minor: subtotalMinor });
+    setCheckingCode(false);
+
+    if (!res.ok) {
+      setApplied(null);
+      setDiscountMessage(res.error.message);
+      return;
+    }
+    if (!res.data?.valid) {
+      setApplied(null);
+      setDiscountMessage(res.data?.message ?? "That code isn't valid.");
+      return;
+    }
+
+    setApplied({
+      code: res.data.code!,
+      discountMinor: res.data.discountMinor!,
+    });
+    setDiscountMessage(null);
+  };
 
   const set = (k: keyof typeof form, v: string) => {
     setForm((f) => ({ ...f, [k]: v }));
@@ -131,7 +175,7 @@ export default function CheckoutPage() {
       user_id: userId,
       fulfillment,
       payment,
-      discount_code: discount || undefined,
+      discount_code: applied?.code,
       contact: form,
       items: lines.map((l) => ({ product_id: l.productId, quantity: l.quantity })),
       },
@@ -258,13 +302,32 @@ export default function CheckoutPage() {
               )}
             </ul>
 
-            <Input
-              label="Discount code"
-              placeholder="e.g. FLUFFY10"
-              autoCapitalize="characters"
-              value={discount}
-              onChange={(e) => setDiscount(e.target.value)}
-            />
+            <div className="flex items-end gap-2">
+              <Input
+                label="Discount code"
+                className="flex-1"
+                placeholder="e.g. FLUFFY10"
+                autoCapitalize="characters"
+                error={discountMessage ?? undefined}
+                hint={applied ? `${applied.code} applied` : undefined}
+                value={discount}
+                onChange={(e) => {
+                  setDiscount(e.target.value);
+                  // Editing invalidates what was applied — the total must never
+                  // show a discount for a code the field no longer holds.
+                  if (applied) setApplied(null);
+                  if (discountMessage) setDiscountMessage(null);
+                }}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={applyDiscount}
+                disabled={checkingCode || !discount.trim()}
+              >
+                {checkingCode ? "Checking…" : "Apply"}
+              </Button>
+            </div>
 
             <div className="flex flex-col gap-1 text-small text-navy/80">
               <span>Payment method</span>
@@ -276,10 +339,17 @@ export default function CheckoutPage() {
               />
             </div>
 
+            {applied && (
+              <div className="flex items-center justify-between text-small text-navy/80">
+                <span>Discount ({applied.code})</span>
+                <span>-{formatMinor(applied.discountMinor)}</span>
+              </div>
+            )}
+
             <div className="flex items-center justify-between border-t border-navy/20 pt-4">
               <span className="text-h4 font-bold text-navy">Total</span>
               <span className="text-h4 font-bold text-navy">
-                {formatMinor(subtotalMinor)}
+                {formatMinor(totalMinor)}
               </span>
             </div>
 

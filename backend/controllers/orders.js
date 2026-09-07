@@ -8,6 +8,11 @@ const {
   DEFAULT_CURRENCY,
 } = require("../lib/money");
 const { toPublicOrder, toOwnerOrder } = require("../lib/orderView");
+const {
+  normalizeCode,
+  validateDiscount,
+  rejectionMessage,
+} = require("../lib/discounts");
 const { normalizeOrderNumber, isValidOrderNumber } = require("../lib/orderNumber");
 
 const createOrder = async (req, res) => {
@@ -56,9 +61,40 @@ const createOrder = async (req, res) => {
     });
   }
 
-  const totalMinor = sumMinor(
+  const subtotalMinor = sumMinor(
     priced.map((line) => lineTotal(line.unitPriceMinor, line.quantity))
   );
+
+  // The body supplies a CODE and nothing else — never an amount. What it is
+  // worth is computed here from the stored row.
+  let discount = null;
+  let totalMinor = subtotalMinor;
+
+  const code = normalizeCode(req.body.discount_code);
+  if (code) {
+    const row = await repo.findDiscountByCode(code);
+    const userRedemptions = row
+      ? await repo.countUserRedemptions(row.id, req.user?.id)
+      : 0;
+
+    const result = validateDiscount({
+      discount: row,
+      subtotalMinor,
+      userRedemptions,
+    });
+
+    // Refuse rather than silently ignoring: a customer who typed a code and was
+    // charged full price with no explanation is the bug this replaces.
+    if (!result.ok) throw badRequest(rejectionMessage(result.reason));
+
+    discount = {
+      id: row.id,
+      code: row.code,
+      amountMinor: result.discountMinor,
+      usageLimit: row.usage_limit ?? null,
+    };
+    totalMinor = subtotalMinor - result.discountMinor;
+  }
 
   const order = await repo.createOrder({
     userId,
@@ -69,6 +105,7 @@ const createOrder = async (req, res) => {
     totalMinor,
     currency: DEFAULT_CURRENCY,
     idempotencyKey,
+    discount,
   });
 
   // The repository refuses rather than overselling; surface it as a 409 naming
@@ -79,10 +116,18 @@ const createOrder = async (req, res) => {
     );
   }
 
+  // The last use was claimed between validation and the write.
+  if (order.discountUnavailable) {
+    throw conflict("That code was just fully redeemed. Please remove it and try again.");
+  }
+
   if (userId) await repo.clearCart(userId);
 
   res.status(201).json({
     orderNumber: order.orderNumber,
+    subtotalMinor,
+    discountCode: discount?.code ?? null,
+    discountMinor: discount?.amountMinor ?? 0,
     totalMinor: order.totalMinor,
     currency: order.currency,
   });
@@ -119,4 +164,34 @@ const trackOrder = async (req, res) => {
   res.json(toPublicOrder(order));
 };
 
-module.exports = { createOrder, myOrders, trackOrder };
+/**
+ * Check a code without placing an order, so checkout can show what it is worth
+ * before submitting rather than surprising the customer at the end.
+ *
+ * Validates against the same logic as placement, but claims nothing — the
+ * authoritative check still happens inside the order transaction.
+ */
+const checkDiscount = async (req, res) => {
+  const code = normalizeCode(req.body.code);
+  const subtotalMinor = req.body.subtotal_minor;
+
+  const row = code ? await repo.findDiscountByCode(code) : null;
+  const userRedemptions = row
+    ? await repo.countUserRedemptions(row.id, req.user?.id)
+    : 0;
+
+  const result = validateDiscount({ discount: row, subtotalMinor, userRedemptions });
+
+  if (!result.ok) {
+    return res.json({ valid: false, message: rejectionMessage(result.reason) });
+  }
+
+  res.json({
+    valid: true,
+    code: row.code,
+    discountMinor: result.discountMinor,
+    totalMinor: subtotalMinor - result.discountMinor,
+  });
+};
+
+module.exports = { createOrder, myOrders, trackOrder, checkDiscount };

@@ -106,9 +106,26 @@ function createApp({ rateLimit: enableRateLimit = true } = {}) {
   v1.use("/orders", ordersRoutes);
   v1.use("/likes", likesRoutes);
   v1.use("/admin", adminRoutes);
+  // Discount checking is a guessing oracle if it is fast and unlimited: try
+  // codes until one works. B10.4 names this directly. The generic message from
+  // lib/discounts.js is the other half of the defence.
+  const discountLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+      error: {
+        message: "Too many code attempts, please try again later.",
+        code: "RATE_LIMITED",
+      },
+    },
+  });
+
   if (enableRateLimit) {
     v1.use("/auth", authLimiter);
     v1.use("/orders/track", trackLimiter);
+    v1.use("/orders/discount", discountLimiter);
   }
   v1.use("/", authRoutes);
 

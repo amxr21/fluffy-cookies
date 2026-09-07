@@ -50,6 +50,11 @@ const orderStatusSchema = z.object({
 
 const productIdParam = z.object({ productId: id });
 
+const discountCheckSchema = z.object({
+  code: z.string().min(1).max(32),
+  subtotal_minor: z.coerce.number().int().min(0),
+});
+
 const stockSchema = z
   .object({
     onHand: z.coerce.number().int().min(0).max(1000000).optional(),
@@ -77,4 +82,5 @@ module.exports = {
   orderStatusSchema,
   productIdParam,
   stockSchema,
+  discountCheckSchema,
 };

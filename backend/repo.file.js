@@ -35,6 +35,23 @@ async function listProducts({ limit, offset } = {}) {
   return limit == null ? all : all.slice(offset, offset + limit);
 }
 
+const matches = (p, term) => {
+  const t = String(term).toLowerCase();
+  return (
+    String(p.name || "").toLowerCase().includes(t) ||
+    String(p.description || "").toLowerCase().includes(t)
+  );
+};
+
+async function searchProducts(term, { limit, offset }) {
+  const hits = clone(db.products.filter((p) => matches(p, term)));
+  return hits.slice(offset, offset + limit);
+}
+
+async function countSearchProducts(term) {
+  return db.products.filter((p) => matches(p, term)).length;
+}
+
 async function countProducts() {
   return db.products.length;
 }
@@ -512,6 +529,8 @@ module.exports = {
   upsertGoogleUser,
   listProducts,
   countProducts,
+  searchProducts,
+  countSearchProducts,
   countOrdersByUser,
   findProductById,
   getCart,

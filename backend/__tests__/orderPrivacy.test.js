@@ -22,8 +22,13 @@ const app = createApp({ rateLimit: false });
 const CONTACT = {
   name: "Ammar Al Nuaimi",
   phone: "0501234567",
+  email: "ammar@example.test",
   address: "Villa 12, Street 4",
+  // Required for a Delivery order since zones were introduced, and itself PII
+  // the public view must not echo back.
+  emirate: "Al Ain",
   city: "Al Ain",
+  area: "Zakher",
   note: "gate code 4471",
 };
 
@@ -100,6 +105,7 @@ describe("the public tracking response", () => {
       "fulfillment",
       "items",
       "orderNumber",
+      "shippingMinor",
       "status",
       "totalMinor",
     ]);

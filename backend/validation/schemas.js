@@ -36,7 +36,11 @@ const orderSchema = z.object({
       // confirmation — see email/mailer.js.
       email: z.string().email().max(254).optional(),
       address: z.string().optional(),
+      // GCC addressing: emirate -> city -> area -> building. There is no
+      // postcode, so `emirate` is what the delivery zone is resolved from.
+      emirate: z.string().max(64).optional(),
       city: z.string().optional(),
+      area: z.string().max(120).optional(),
       note: z.string().optional(),
     })
     .optional(),

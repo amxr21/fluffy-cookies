@@ -30,4 +30,8 @@ router.post(
   asyncHandler(orders.checkDiscount)
 );
 
+// Public: the storefront needs zones and the threshold to show a fee before
+// checkout. Nothing here is customer-specific.
+router.get("/shipping/zones", asyncHandler(orders.getShippingZones));
+
 module.exports = router;

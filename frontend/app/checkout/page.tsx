@@ -23,15 +23,28 @@ const PAYMENT_OPTIONS = [
   { value: "online", label: "Pay Online", disabled: true, note: "Coming soon" },
 ];
 
+/** Emirates Fluffy delivers to. Mirrors backend/lib/shipping.js — the server
+ *  re-resolves the zone and price, so this list is for choosing, not pricing. */
+const EMIRATE_OPTIONS = [
+  { value: "Al Ain", label: "Al Ain" },
+  { value: "Abu Dhabi", label: "Abu Dhabi" },
+  { value: "Dubai", label: "Dubai" },
+  { value: "Sharjah", label: "Sharjah" },
+  { value: "Ajman", label: "Ajman" },
+  { value: "Umm Al Quwain", label: "Umm Al Quwain" },
+  { value: "Ras Al Khaimah", label: "Ras Al Khaimah" },
+  { value: "Fujairah", label: "Fujairah" },
+];
+
 const FULFILLMENT_OPTIONS = [
   { value: "Pickup", label: "Pickup" },
   { value: "Delivery", label: "Delivery" },
 ];
 
-type FormField = "name" | "phone" | "email" | "address" | "city" | "note";
+type FormField = "name" | "phone" | "email" | "emirate" | "address" | "city" | "note";
 
 /** Focus order for jumping to the first invalid field. */
-const FIELD_ORDER: FormField[] = ["name", "phone", "email", "address", "city"];
+const FIELD_ORDER: FormField[] = ["name", "phone", "email", "emirate", "address", "city"];
 
 /** UAE mobile numbers: 05X XXX XXXX, tolerant of spaces/dashes and +971. */
 const PHONE_RE = /^(?:\+?971|0)(?:\s|-)?5\d(?:\s|-)?\d{3}(?:\s|-)?\d{4}$/;
@@ -59,6 +72,9 @@ function validate(
 
   // Address only applies to delivery orders.
   if (fulfillment === "Delivery") {
+    // The emirate is what the delivery zone and fee are resolved from, so a
+    // delivery order without one cannot be priced.
+    if (!form.emirate.trim()) errors.emirate = "Please choose your emirate.";
     if (!form.address.trim()) errors.address = "Please enter your address.";
     if (!form.city.trim()) errors.city = "Please enter your city.";
   }
@@ -75,6 +91,7 @@ export default function CheckoutPage() {
     name: "",
     phone: "",
     email: "",
+    emirate: "",
     address: "",
     city: "",
     note: "",
@@ -269,6 +286,18 @@ export default function CheckoutPage() {
 
             {fulfillment === "Delivery" && (
               <div className="grid gap-4 sm:grid-cols-2">
+                <div className="flex flex-col gap-1 text-small text-navy/80 sm:col-span-2">
+                  <span>Emirate</span>
+                  <Dropdown
+                    ariaLabel="Emirate"
+                    value={form.emirate}
+                    options={EMIRATE_OPTIONS}
+                    onChange={(v) => set("emirate", v)}
+                  />
+                  {errors.emirate && (
+                    <span className="text-caption text-red-700">{errors.emirate}</span>
+                  )}
+                </div>
                 <Input
                   label="Address"
                   required

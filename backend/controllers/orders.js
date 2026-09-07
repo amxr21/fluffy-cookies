@@ -10,6 +10,7 @@ const {
 const { toPublicOrder, toOwnerOrder } = require("../lib/orderView");
 const { readPageParams, paginated } = require("../lib/pagination");
 const mailer = require("../email/mailer");
+const { quoteShipping, ZONES, FREE_DELIVERY_THRESHOLD_MINOR } = require("../lib/shipping");
 const {
   normalizeCode,
   validateDiscount,
@@ -98,6 +99,19 @@ const createOrder = async (req, res) => {
     totalMinor = subtotalMinor - result.discountMinor;
   }
 
+  // Delivery is priced from the zone, never from the request. The threshold is
+  // evaluated AFTER discount, so a code cannot be used to cross it and also
+  // take the discount.
+  const shipping = quoteShipping({
+    fulfillment,
+    emirate: contact?.emirate,
+    subtotalAfterDiscountMinor: totalMinor,
+  });
+  if (!shipping.ok) {
+    throw badRequest("Sorry — we don't deliver to that area yet.");
+  }
+  totalMinor += shipping.feeMinor;
+
   const order = await repo.createOrder({
     userId,
     fulfillment,
@@ -108,6 +122,7 @@ const createOrder = async (req, res) => {
     currency: DEFAULT_CURRENCY,
     idempotencyKey,
     discount,
+    shipping,
   });
 
   // The repository refuses rather than overselling; surface it as a 409 naming
@@ -148,6 +163,7 @@ const createOrder = async (req, res) => {
     subtotalMinor,
     discountCode: discount?.code ?? null,
     discountMinor: discount?.amountMinor ?? 0,
+    shippingMinor: shipping.feeMinor,
     totalMinor: order.totalMinor,
     currency: order.currency,
   });
@@ -218,4 +234,26 @@ const checkDiscount = async (req, res) => {
   });
 };
 
-module.exports = { createOrder, myOrders, trackOrder, checkDiscount };
+/**
+ * Delivery zones and the free-delivery threshold, so the storefront can show
+ * the fee before checkout rather than adding it at the last step.
+ */
+const getShippingZones = (_req, res) => {
+  res.json({
+    freeDeliveryThresholdMinor: FREE_DELIVERY_THRESHOLD_MINOR,
+    zones: ZONES.map((z) => ({
+      id: z.id,
+      label: z.label,
+      emirates: z.emirates,
+      feeMinor: z.feeMinor,
+    })),
+  });
+};
+
+module.exports = {
+  createOrder,
+  myOrders,
+  trackOrder,
+  checkDiscount,
+  getShippingZones,
+};

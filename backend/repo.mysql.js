@@ -132,6 +132,16 @@ async function createOrder({
   idempotencyKey,
 }) {
   return withTransaction(async (q) => {
+    // Reserve stock BEFORE creating anything. A failure here rolls the whole
+    // transaction back, so there is no order without its stock and no stock
+    // held by an order that was never created.
+    for (const it of items) {
+      const ok = await reserveStock(q, it.product_id, it.quantity);
+      if (!ok) {
+        return { outOfStock: { productId: it.product_id, name: it.name } };
+      }
+    }
+
     // Generated before the INSERT, not derived from insertId afterwards: the
     // old two-step left every order briefly untrackable, and tied the public
     // number to a sequential database id.
@@ -167,6 +177,16 @@ async function createOrder({
     // Claim the key inside the same transaction as the order. A concurrent
     // duplicate hits the PRIMARY KEY and its whole transaction rolls back, so
     // the race cannot produce two orders.
+    for (const it of items) {
+      await recordStockMovement(q, {
+        productId: it.product_id,
+        delta: -it.quantity,
+        reason: "reserved",
+        refType: "order",
+        refId: orderNumber,
+      });
+    }
+
     // Placement is the first history event — `from` is NULL because the order
     // came from nowhere.
     await q(
@@ -324,6 +344,47 @@ async function updateOrderStatus({ orderId, from, to, actorId, note }) {
       { op: "updateOrderStatus.event" }
     );
 
+    // Settle the reservation in the same transaction as the status change.
+    // A cancelled order must put its stock back, and a collected one must
+    // stop holding a reservation for goods that have physically left —
+    // otherwise reservations leak and the shop looks sold out while stock
+    // sits on the shelf.
+    if (to === "cancelled" || to === "completed") {
+      const lines = await q(
+        "SELECT product_id, quantity FROM order_items WHERE order_id = ?",
+        [orderId],
+        { op: "updateOrderStatus.lines" }
+      );
+      const orderRow = await q("SELECT order_number FROM orders WHERE id = ?", [orderId], {
+        op: "updateOrderStatus.number",
+      });
+      const refId = orderRow[0]?.order_number;
+
+      for (const line of lines) {
+        if (to === "cancelled") {
+          await releaseStock(q, line.product_id, line.quantity);
+          await recordStockMovement(q, {
+            productId: line.product_id,
+            delta: line.quantity,
+            reason: "cancelled",
+            refType: "order",
+            refId,
+            actorId,
+          });
+        } else {
+          await consumeStock(q, line.product_id, line.quantity);
+          await recordStockMovement(q, {
+            productId: line.product_id,
+            delta: 0,
+            reason: "collected",
+            refType: "order",
+            refId,
+            actorId,
+          });
+        }
+      }
+    }
+
     return { orderId, from: current, to };
   });
 }
@@ -348,6 +409,128 @@ async function findOrderIdByNumber(orderNumber) {
   return rows[0] || null;
 }
 
+// --- inventory ---
+/**
+ * Reserve stock for one line, atomically.
+ *
+ * The whole oversell defence is the WHERE clause: the check and the decrement
+ * are ONE statement, so two concurrent orders for the last unit cannot both
+ * pass. A read-then-write here is a race that two customers WILL hit during a
+ * promotion — the standard calls this out specifically.
+ *
+ * Returns false when there was not enough; the caller rolls the transaction
+ * back. `track_stock = 0` products (made to order) always succeed.
+ */
+async function reserveStock(q, productId, quantity) {
+  const result = await q(
+    `UPDATE inventory
+        SET reserved = reserved + ?
+      WHERE product_id = ?
+        AND (track_stock = 0 OR on_hand - reserved >= ?)`,
+    [quantity, productId, quantity],
+    { op: "reserveStock" }
+  );
+  return result.affectedRows > 0;
+}
+
+/** Release a reservation — a cancelled order puts the stock back. */
+async function releaseStock(q, productId, quantity) {
+  await q(
+    `UPDATE inventory
+        SET reserved = GREATEST(reserved - ?, 0)
+      WHERE product_id = ?`,
+    [quantity, productId],
+    { op: "releaseStock" }
+  );
+}
+
+/**
+ * Collection: the goods have left. Reserved AND on_hand both drop, because the
+ * stock is not merely spoken for any more — it is gone.
+ */
+async function consumeStock(q, productId, quantity) {
+  await q(
+    `UPDATE inventory
+        SET on_hand = GREATEST(on_hand - ?, 0),
+            reserved = GREATEST(reserved - ?, 0)
+      WHERE product_id = ? AND track_stock = 1`,
+    [quantity, quantity, productId],
+    { op: "consumeStock" }
+  );
+}
+
+async function recordStockMovement(q, { productId, delta, reason, refType, refId, actorId }) {
+  await q(
+    `INSERT INTO inventory_ledger (product_id, delta, reason, ref_type, ref_id, actor_id)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [productId, delta, reason, refType || null, refId || null, actorId || null],
+    { op: "recordStockMovement" }
+  );
+}
+
+async function getStock(productId) {
+  const rows = await query(
+    `SELECT product_id AS productId, on_hand AS onHand, reserved,
+            (on_hand - reserved) AS available, low_stock_threshold AS lowStockThreshold,
+            track_stock AS trackStock
+     FROM inventory WHERE product_id = ?`,
+    [productId],
+    { op: "getStock" }
+  );
+  return rows[0] || null;
+}
+
+async function listStock() {
+  return query(
+    `SELECT i.product_id AS productId, p.name, i.on_hand AS onHand, i.reserved,
+            (i.on_hand - i.reserved) AS available,
+            i.low_stock_threshold AS lowStockThreshold, i.track_stock AS trackStock
+     FROM inventory i JOIN products p ON p.id = i.product_id
+     ORDER BY i.product_id`,
+    [],
+    { op: "listStock" }
+  );
+}
+
+/** Set the counted quantity, logging the difference rather than the new total. */
+async function setStock({ productId, onHand, trackStock, lowStockThreshold, actorId }) {
+  return withTransaction(async (q) => {
+    const rows = await q(
+      "SELECT on_hand FROM inventory WHERE product_id = ? FOR UPDATE",
+      [productId],
+      { op: "setStock.lock" }
+    );
+    if (!rows.length) return null;
+
+    const previous = rows[0].on_hand;
+    const fields = [];
+    const params = [];
+    if (onHand !== undefined) { fields.push("on_hand = ?"); params.push(onHand); }
+    if (trackStock !== undefined) { fields.push("track_stock = ?"); params.push(trackStock ? 1 : 0); }
+    if (lowStockThreshold !== undefined) {
+      fields.push("low_stock_threshold = ?");
+      params.push(lowStockThreshold);
+    }
+    if (!fields.length) return { productId, onHand: previous };
+
+    params.push(productId);
+    await q(`UPDATE inventory SET ${fields.join(", ")} WHERE product_id = ?`, params, {
+      op: "setStock.update",
+    });
+
+    if (onHand !== undefined && onHand !== previous) {
+      await q(
+        `INSERT INTO inventory_ledger (product_id, delta, reason, ref_type, actor_id)
+         VALUES (?, ?, 'adjustment', 'manual', ?)`,
+        [productId, onHand - previous, actorId || null],
+        { op: "setStock.ledger" }
+      );
+    }
+
+    return { productId, onHand: onHand ?? previous, previousOnHand: previous };
+  });
+}
+
 module.exports = {
   findUserById,
   upsertGoogleUser,
@@ -362,6 +545,13 @@ module.exports = {
   toggleLike,
   createOrder,
   findOrderByIdempotencyKey,
+  reserveStock,
+  releaseStock,
+  consumeStock,
+  recordStockMovement,
+  getStock,
+  listStock,
+  setStock,
   updateOrderStatus,
   getOrderEvents,
   findOrderIdByNumber,

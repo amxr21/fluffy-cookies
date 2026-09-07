@@ -130,6 +130,7 @@ async function createOrder({
   totalMinor,
   currency,
   idempotencyKey,
+  discount,
 }) {
   // Reserve before creating anything, and unwind on failure — the MySQL path
   // gets this from the transaction; here it has to be explicit.
@@ -142,6 +143,13 @@ async function createOrder({
     reserved.push(it);
   }
 
+  // Claim the discount before creating the order, unwinding the stock
+  // reservations if the last use was taken in the meantime.
+  if (discount && !claimDiscountSync(discount.id, discount.usageLimit ?? null)) {
+    for (const done of reserved) releaseStockSync(done.product_id, done.quantity);
+    return { discountUnavailable: true };
+  }
+
   const id = nextOrderId();
   const orderNumber = generateOrderNumber();
   const order = {
@@ -151,6 +159,8 @@ async function createOrder({
     status: "pending",
     totalMinor,
     currency,
+    discount_code: discount?.code || null,
+    discount_minor: discount?.amountMinor || 0,
     fulfillment,
     payment,
     contact,
@@ -166,6 +176,14 @@ async function createOrder({
     createdAt: new Date().toISOString(),
   };
   db.orders.push(order);
+  if (discount) {
+    recordRedemptionSync({
+      discountId: discount.id,
+      orderId: id,
+      userId,
+      amountMinor: discount.amountMinor,
+    });
+  }
   for (const it of items) {
     recordStockMovementSync({
       productId: it.product_id,
@@ -423,6 +441,55 @@ async function setStock({ productId, onHand, trackStock, lowStockThreshold, acto
   return { productId: Number(productId), onHand: row.on_hand, previousOnHand: previous };
 }
 
+// --- discounts ---
+async function findDiscountByCode(code) {
+  return clone(db.discounts.find((d) => d.code === code) || null);
+}
+
+async function countUserRedemptions(discountId, userId) {
+  if (!userId) return 0;
+  return db.discount_redemptions.filter(
+    (r) => r.discount_id === Number(discountId) && String(r.user_id) === String(userId)
+  ).length;
+}
+
+/** Mirrors the conditional UPDATE: check and increment in one step. */
+function claimDiscountSync(discountId, usageLimit) {
+  const row = db.discounts.find((d) => d.id === Number(discountId));
+  if (!row) return false;
+  if (usageLimit != null && row.used_count >= usageLimit) return false;
+  row.used_count += 1;
+  return true;
+}
+
+function recordRedemptionSync({ discountId, orderId, userId, amountMinor }) {
+  db.discount_redemptions.push({
+    id: db.discount_redemptions.length + 1,
+    discount_id: Number(discountId),
+    order_id: Number(orderId),
+    user_id: userId ? Number(userId) : null,
+    amount_minor: amountMinor,
+    redeemed_at: new Date().toISOString(),
+  });
+}
+
+async function listDiscounts() {
+  return clone(db.discounts).map((d) => ({
+    id: d.id,
+    code: d.code,
+    type: d.type,
+    value: d.value,
+    maxDiscountMinor: d.max_discount_minor ?? null,
+    minSubtotalMinor: d.min_subtotal_minor ?? 0,
+    startsAt: d.starts_at ?? null,
+    endsAt: d.ends_at ?? null,
+    usageLimit: d.usage_limit ?? null,
+    perUserLimit: d.per_user_limit ?? null,
+    usedCount: d.used_count,
+    active: d.active,
+  }));
+}
+
 module.exports = {
   findUserById,
   upsertGoogleUser,
@@ -437,6 +504,9 @@ module.exports = {
   toggleLike,
   createOrder,
   findOrderByIdempotencyKey,
+  findDiscountByCode,
+  countUserRedemptions,
+  listDiscounts,
   getStock,
   listStock,
   setStock,

@@ -130,6 +130,7 @@ async function createOrder({
   totalMinor,
   currency,
   idempotencyKey,
+  discount,
 }) {
   return withTransaction(async (q) => {
     // Reserve stock BEFORE creating anything. A failure here rolls the whole
@@ -147,12 +148,16 @@ async function createOrder({
     // number to a sequential database id.
     const orderNumber = generateOrderNumber();
     const result = await q(
-      `INSERT INTO orders (order_number, user_id, status, total_minor, currency, fulfillment, payment, contact)
-       VALUES (?, ?, 'pending', ?, ?, ?, ?, ?)`,
+      `INSERT INTO orders
+         (order_number, user_id, status, total_minor, discount_code, discount_minor,
+          currency, fulfillment, payment, contact)
+       VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)`,
       [
         orderNumber,
         userId || null,
         totalMinor,
+        discount?.code || null,
+        discount?.amountMinor || 0,
         currency,
         fulfillment,
         payment,
@@ -184,6 +189,24 @@ async function createOrder({
         reason: "reserved",
         refType: "order",
         refId: orderNumber,
+      });
+    }
+
+    // Claim the discount inside the same transaction as the order. If the last
+    // use was taken between validation and here, the whole thing rolls back
+    // rather than granting an over-limit redemption.
+    if (discount) {
+      const claimed = await claimDiscount(q, {
+        discountId: discount.id,
+        usageLimit: discount.usageLimit ?? null,
+      });
+      if (!claimed) return { discountUnavailable: true };
+
+      await recordRedemption(q, {
+        discountId: discount.id,
+        orderId,
+        userId,
+        amountMinor: discount.amountMinor,
       });
     }
 
@@ -531,6 +554,67 @@ async function setStock({ productId, onHand, trackStock, lowStockThreshold, acto
   });
 }
 
+// --- discounts ---
+async function findDiscountByCode(code) {
+  const rows = await query("SELECT * FROM discounts WHERE code = ?", [code], {
+    op: "findDiscountByCode",
+  });
+  return rows[0] || null;
+}
+
+/** How many times this user has already redeemed this code. */
+async function countUserRedemptions(discountId, userId) {
+  if (!userId) return 0;
+  const rows = await query(
+    "SELECT COUNT(*) AS n FROM discount_redemptions WHERE discount_id = ? AND user_id = ?",
+    [discountId, userId],
+    { op: "countUserRedemptions" }
+  );
+  return Number(rows[0]?.n || 0);
+}
+
+/**
+ * Claim one use of a discount, inside the caller's transaction.
+ *
+ * The row is locked and `used_count` re-read before incrementing: two customers
+ * redeeming the last use of a code would otherwise both read used_count = 9
+ * against a limit of 10, both pass validation, and both redeem. The conditional
+ * UPDATE makes the check and the increment one step.
+ *
+ * Returns false when the limit was taken in the meantime.
+ */
+async function claimDiscount(q, { discountId, usageLimit }) {
+  const result = await q(
+    `UPDATE discounts
+        SET used_count = used_count + 1
+      WHERE id = ? AND (? IS NULL OR used_count < ?)`,
+    [discountId, usageLimit, usageLimit],
+    { op: "claimDiscount" }
+  );
+  return result.affectedRows > 0;
+}
+
+async function recordRedemption(q, { discountId, orderId, userId, amountMinor }) {
+  await q(
+    `INSERT INTO discount_redemptions (discount_id, order_id, user_id, amount_minor)
+     VALUES (?, ?, ?, ?)`,
+    [discountId, orderId, userId || null, amountMinor],
+    { op: "recordRedemption" }
+  );
+}
+
+async function listDiscounts() {
+  return query(
+    `SELECT id, code, type, value, max_discount_minor AS maxDiscountMinor,
+            min_subtotal_minor AS minSubtotalMinor, starts_at AS startsAt,
+            ends_at AS endsAt, usage_limit AS usageLimit,
+            per_user_limit AS perUserLimit, used_count AS usedCount, active
+     FROM discounts ORDER BY created_at DESC`,
+    [],
+    { op: "listDiscounts" }
+  );
+}
+
 module.exports = {
   findUserById,
   upsertGoogleUser,
@@ -545,6 +629,9 @@ module.exports = {
   toggleLike,
   createOrder,
   findOrderByIdempotencyKey,
+  findDiscountByCode,
+  countUserRedemptions,
+  listDiscounts,
   reserveStock,
   releaseStock,
   consumeStock,

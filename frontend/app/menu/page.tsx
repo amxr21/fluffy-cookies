@@ -1,6 +1,6 @@
 import { MenuSection, PageHeader } from "@/components/sections";
 import { Container } from "@/components/ui/Container";
-import { MENU } from "@/lib/menu";
+import { getMenu } from "@/lib/catalogue";
 
 export const metadata = {
   title: "Menu",
@@ -8,7 +8,11 @@ export const metadata = {
     "Cookies, stuffed sweets and specialty drinks, baked fresh daily in Al Ain.",
 };
 
-export default function MenuPage() {
+export default async function MenuPage() {
+  // Server component: the menu is fetched at build/revalidate time, so the
+  // page ships as HTML rather than a spinner that fills in.
+  const { categories } = await getMenu();
+
   return (
     <main className="flex-1">
       {/* Bounding wrapper: the sticky header releases when this scrolls out,
@@ -23,7 +27,7 @@ export default function MenuPage() {
 
         <Container className="relative z-10 pb-16 md:pb-24">
           <div className="overflow-hidden rounded-3xl border border-navy/15 bg-white/60 shadow-2xl shadow-navy/10 backdrop-blur-md">
-            {MENU.map((category) => (
+            {categories.map((category) => (
               <MenuSection key={category.id} category={category} />
             ))}
           </div>

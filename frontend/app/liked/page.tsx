@@ -10,6 +10,16 @@ import { useAuth } from "@/context/AuthContext";
 import { getJSON, type Paginated } from "@/lib/safeFetch";
 import type { MenuItem } from "@/lib/menu";
 
+/** A product row as `GET /likes/:id` returns it. */
+type ApiProduct = {
+  id: number;
+  slug?: string;
+  name: string;
+  description: string;
+  image: string;
+  price_minor: number;
+};
+
 export default function LikedPage() {
   const { user } = useAuth();
   const [items, setItems] = useState<MenuItem[]>([]);
@@ -24,10 +34,20 @@ export default function LikedPage() {
     }
     let active = true;
     (async () => {
-      const res = await getJSON<Paginated<MenuItem>>(`/likes/${user.userId}`);
+      const res = await getJSON<Paginated<ApiProduct>>(`/likes/${user.userId}`);
       if (!active) return;
       if (res.ok && Array.isArray(res.data?.data)) {
-        setItems(res.data.data);
+        // The API returns product rows; the card wants MenuItem shape.
+        setItems(
+          res.data.data.map((p) => ({
+            id: p.slug ?? String(p.id),
+            productId: p.id,
+            name: p.name,
+            description: p.description,
+            image: p.image,
+            priceMinor: p.price_minor,
+          }))
+        );
         setState("ready");
       } else if (res.status === 403) {
         // Someone else's id in the URL. A different answer from "it broke".

@@ -7,6 +7,7 @@ import { SmoothScroll } from "@/components/providers/SmoothScroll";
 import { ToastProvider } from "@/components/providers/ToastProvider";
 import { AuthProvider } from "@/context/AuthContext";
 import { CartProvider } from "@/context/CartContext";
+import { LikeProvider } from "@/context/LikeContext";
 import "./globals.css";
 
 const DESCRIPTION =
@@ -63,14 +64,16 @@ export default function RootLayout({
         <Script src="https://accounts.google.com/gsi/client" strategy="afterInteractive" />
         <ToastProvider>
           <AuthProvider>
-            <CartProvider>
+            <LikeProvider>
+              <CartProvider>
               <SmoothScroll>
                 <RouteLoader />
                 <Navbar />
                 {children}
                 <Footer />
               </SmoothScroll>
-            </CartProvider>
+              </CartProvider>
+            </LikeProvider>
           </AuthProvider>
         </ToastProvider>
       </body>

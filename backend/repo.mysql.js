@@ -210,6 +210,76 @@ async function withItems(order) {
   return { ...order, items };
 }
 
+// --- sessions ---
+/**
+ * Refresh-token sessions. The plaintext token never reaches this layer — the
+ * caller hashes it — so a database leak yields no working sessions.
+ */
+async function createSession({ id, userId, tokenHash, familyId, expiresAt, userAgent, ip }) {
+  await query(
+    `INSERT INTO sessions (id, user_id, token_hash, family_id, expires_at, user_agent, ip)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [id, userId, tokenHash, familyId, expiresAt, userAgent || null, ip || null],
+    { op: "createSession" }
+  );
+  return { id, familyId };
+}
+
+async function findSessionByTokenHash(tokenHash) {
+  const rows = await query(
+    `SELECT id, user_id AS userId, family_id AS familyId, used_at AS usedAt,
+            revoked_at AS revokedAt, expires_at AS expiresAt
+     FROM sessions WHERE token_hash = ?`,
+    [tokenHash],
+    { op: "findSessionByTokenHash" }
+  );
+  return rows[0] || null;
+}
+
+/** Mark a refresh token as exchanged. A second exchange is the reuse signal. */
+async function markSessionUsed(id) {
+  await query("UPDATE sessions SET used_at = CURRENT_TIMESTAMP WHERE id = ?", [id], {
+    op: "markSessionUsed",
+  });
+}
+
+async function revokeSession(id) {
+  await query("UPDATE sessions SET revoked_at = CURRENT_TIMESTAMP WHERE id = ?", [id], {
+    op: "revokeSession",
+  });
+}
+
+/** Reuse detected: every token descended from the same login is now suspect. */
+async function revokeSessionFamily(familyId) {
+  await query(
+    "UPDATE sessions SET revoked_at = CURRENT_TIMESTAMP WHERE family_id = ? AND revoked_at IS NULL",
+    [familyId],
+    { op: "revokeSessionFamily" }
+  );
+}
+
+async function revokeAllUserSessions(userId) {
+  await query(
+    "UPDATE sessions SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = ? AND revoked_at IS NULL",
+    [userId],
+    { op: "revokeAllUserSessions" }
+  );
+}
+
+/** Invalidate every access token already issued to this user. */
+async function bumpTokenVersion(userId) {
+  await query("UPDATE users SET token_version = token_version + 1 WHERE id = ?", [userId], {
+    op: "bumpTokenVersion",
+  });
+}
+
+async function deleteExpiredSessions() {
+  const result = await query("DELETE FROM sessions WHERE expires_at < CURRENT_TIMESTAMP", [], {
+    op: "deleteExpiredSessions",
+  });
+  return result.affectedRows || 0;
+}
+
 module.exports = {
   findUserById,
   upsertGoogleUser,
@@ -224,6 +294,14 @@ module.exports = {
   toggleLike,
   createOrder,
   findOrderByIdempotencyKey,
+  createSession,
+  findSessionByTokenHash,
+  markSessionUsed,
+  revokeSession,
+  revokeSessionFamily,
+  revokeAllUserSessions,
+  bumpTokenVersion,
+  deleteExpiredSessions,
   getOrdersByUser,
   getOrderByNumber,
 };

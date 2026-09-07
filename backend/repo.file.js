@@ -171,6 +171,68 @@ async function getOrderByNumber(orderNumber) {
   return clone(db.orders.find((o) => o.orderNumber === orderNumber) || null);
 }
 
+// --- sessions ---
+async function createSession({ id, userId, tokenHash, familyId, expiresAt, userAgent, ip }) {
+  db.sessions.push({
+    id,
+    user_id: Number(userId),
+    token_hash: tokenHash,
+    family_id: familyId,
+    used_at: null,
+    revoked_at: null,
+    expires_at: expiresAt,
+    user_agent: userAgent || null,
+    ip: ip || null,
+  });
+  return { id, familyId };
+}
+
+async function findSessionByTokenHash(tokenHash) {
+  const row = db.sessions.find((r) => r.token_hash === tokenHash);
+  if (!row) return null;
+  return {
+    id: row.id,
+    userId: row.user_id,
+    familyId: row.family_id,
+    usedAt: row.used_at,
+    revokedAt: row.revoked_at,
+    expiresAt: row.expires_at,
+  };
+}
+
+async function markSessionUsed(id) {
+  const row = db.sessions.find((r) => r.id === id);
+  if (row) row.used_at = new Date();
+}
+
+async function revokeSession(id) {
+  const row = db.sessions.find((r) => r.id === id);
+  if (row) row.revoked_at = new Date();
+}
+
+async function revokeSessionFamily(familyId) {
+  for (const row of db.sessions) {
+    if (row.family_id === familyId && !row.revoked_at) row.revoked_at = new Date();
+  }
+}
+
+async function revokeAllUserSessions(userId) {
+  for (const row of db.sessions) {
+    if (row.user_id === Number(userId) && !row.revoked_at) row.revoked_at = new Date();
+  }
+}
+
+async function bumpTokenVersion(userId) {
+  const user = db.users.find((u) => u.id === Number(userId));
+  if (user) user.token_version = (user.token_version || 0) + 1;
+}
+
+async function deleteExpiredSessions() {
+  const before = db.sessions.length;
+  db.sessions = db.sessions.filter((r) => new Date(r.expires_at) >= new Date());
+  return before - db.sessions.length;
+}
+
 module.exports = {
   findUserById,
   upsertGoogleUser,
@@ -185,6 +247,14 @@ module.exports = {
   toggleLike,
   createOrder,
   findOrderByIdempotencyKey,
+  createSession,
+  findSessionByTokenHash,
+  markSessionUsed,
+  revokeSession,
+  revokeSessionFamily,
+  revokeAllUserSessions,
+  bumpTokenVersion,
+  deleteExpiredSessions,
   getOrdersByUser,
   getOrderByNumber,
 };

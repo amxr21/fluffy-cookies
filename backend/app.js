@@ -6,6 +6,7 @@ const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
+const cookieParser = require("cookie-parser");
 
 const config = require("./config");
 const { ping } = require("./dbClient");
@@ -74,6 +75,9 @@ function createApp({ rateLimit: enableRateLimit = true } = {}) {
 
   if (enableRateLimit) app.use(generalLimiter);
   app.use(express.json());
+  // Auth tokens travel as httpOnly cookies (lib/tokens.js), so they must be
+  // parsed before any route that reads req.user.
+  app.use(cookieParser());
   app.use(requestLogger);
 
   app.get("/health", async (_req, res) => {

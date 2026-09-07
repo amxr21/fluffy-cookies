@@ -15,6 +15,24 @@ const nextConfig: NextConfig = {
     ],
   },
 
+  /**
+   * Proxy the API through this origin.
+   *
+   * The browser calls /api/v1/* on the storefront, and Next forwards to the
+   * backend server-side. That keeps auth cookies same-site, so they can be
+   * `SameSite=Lax` and the browser's own CSRF protection applies — the
+   * alternative for a split-origin deploy is `SameSite=None` plus a
+   * double-submit token layer on every mutation.
+   *
+   * The backend URL is read at request time and is NOT NEXT_PUBLIC_: the
+   * browser no longer needs to know where the API lives, which also means the
+   * API origin is not advertised in the client bundle.
+   */
+  async rewrites() {
+    const target = (process.env.API_ORIGIN || "http://localhost:4000").replace(/\/$/, "");
+    return [{ source: "/api/v1/:path*", destination: `${target}/api/v1/:path*` }];
+  },
+
   async headers() {
     return [
       {

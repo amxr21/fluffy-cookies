@@ -8,6 +8,7 @@ const {
   DEFAULT_CURRENCY,
 } = require("../lib/money");
 const { toPublicOrder, toOwnerOrder } = require("../lib/orderView");
+const { readPageParams, paginated } = require("../lib/pagination");
 const {
   normalizeCode,
   validateDiscount,
@@ -143,8 +144,12 @@ const myOrders = async (req, res) => {
   if (String(req.user.id) !== String(req.params.userId)) {
     throw forbidden("You can only view your own orders");
   }
-  const orders = await repo.getOrdersByUser(req.user.id);
-  res.json(orders.map(toOwnerOrder));
+  const { limit, offset } = readPageParams(req.query);
+  const [orders, total] = await Promise.all([
+    repo.getOrdersByUser(req.user.id, { limit, offset }),
+    repo.countOrdersByUser(req.user.id),
+  ]);
+  res.json(paginated(orders.map(toOwnerOrder), { limit, offset, total }));
 };
 
 const trackOrder = async (req, res) => {

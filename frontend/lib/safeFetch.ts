@@ -207,3 +207,21 @@ export const deleteJSON = <T = unknown>(
     headers: jsonHeaders(options?.headers),
     body: body ? JSON.stringify(body) : undefined,
   });
+
+/**
+ * The envelope every list endpoint returns.
+ *
+ * `hasMore` rather than a page count: the server does not compute a second
+ * full scan just to render a "Next" button that only needs to know whether
+ * there is one.
+ */
+export type Paginated<T> = {
+  data: T[];
+  page: {
+    limit: number;
+    offset: number;
+    count: number;
+    hasMore: boolean;
+    total?: number;
+  };
+};

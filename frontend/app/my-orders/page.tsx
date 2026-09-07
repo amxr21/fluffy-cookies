@@ -6,7 +6,7 @@ import { Container } from "@/components/ui/Container";
 import { StatusState } from "@/components/ui/StatusState";
 import { OrderCard } from "@/components/order/OrderCard";
 import { useAuth } from "@/context/AuthContext";
-import { getJSON } from "@/lib/safeFetch";
+import { getJSON, type Paginated } from "@/lib/safeFetch";
 import type { Order } from "@/lib/orders";
 
 export default function MyOrdersPage() {
@@ -21,10 +21,10 @@ export default function MyOrdersPage() {
     }
     let active = true;
     (async () => {
-      const res = await getJSON<Order[]>(`/orders/user/${user.userId}`);
+      const res = await getJSON<Paginated<Order>>(`/orders/user/${user.userId}`);
       if (!active) return;
-      if (res.ok && Array.isArray(res.data)) {
-        setOrders(res.data);
+      if (res.ok && Array.isArray(res.data?.data)) {
+        setOrders(res.data.data);
         setState("ready");
       } else {
         setState("error");

@@ -6,7 +6,7 @@ import { Container } from "@/components/ui/Container";
 import { MenuCard } from "@/components/ui/MenuCard";
 import { StatusState } from "@/components/ui/StatusState";
 import { useAuth } from "@/context/AuthContext";
-import { getJSON } from "@/lib/safeFetch";
+import { getJSON, type Paginated } from "@/lib/safeFetch";
 import type { MenuItem } from "@/lib/menu";
 
 export default function LikedPage() {
@@ -21,10 +21,10 @@ export default function LikedPage() {
     }
     let active = true;
     (async () => {
-      const res = await getJSON<MenuItem[]>(`/likes/${user.userId}`);
+      const res = await getJSON<Paginated<MenuItem>>(`/likes/${user.userId}`);
       if (!active) return;
-      if (res.ok && Array.isArray(res.data)) {
-        setItems(res.data);
+      if (res.ok && Array.isArray(res.data?.data)) {
+        setItems(res.data.data);
         setState("ready");
       } else {
         setState("error");

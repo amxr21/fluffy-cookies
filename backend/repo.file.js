@@ -155,6 +155,17 @@ async function createOrder({
     createdAt: new Date().toISOString(),
   };
   db.orders.push(order);
+  // Placement is the first history event — `from` is null, the order came
+  // from nowhere.
+  db.order_events.push({
+    id: db.order_events.length + 1,
+    order_id: id,
+    from_status: null,
+    to_status: "pending",
+    actor_id: null,
+    note: null,
+    created_at: order.createdAt,
+  });
   if (idempotencyKey) {
     db.order_idempotency.push({
       idempotency_key: idempotencyKey,
@@ -233,6 +244,49 @@ async function deleteExpiredSessions() {
   return before - db.sessions.length;
 }
 
+// --- order status ---
+async function updateOrderStatus({ orderId, from, to, actorId, note }) {
+  const order = db.orders.find((o) => o.id === Number(orderId));
+  if (!order) return null;
+
+  if (from !== undefined && order.status !== from) {
+    return { conflict: true, current: order.status };
+  }
+
+  const current = order.status;
+  order.status = to;
+  db.order_events.push({
+    id: db.order_events.length + 1,
+    order_id: Number(orderId),
+    from_status: current,
+    to_status: to,
+    actor_id: actorId || null,
+    note: note || null,
+    created_at: new Date().toISOString(),
+  });
+
+  return { orderId: Number(orderId), from: current, to };
+}
+
+async function getOrderEvents(orderId) {
+  return clone(
+    db.order_events
+      .filter((e) => e.order_id === Number(orderId))
+      .map((e) => ({
+        fromStatus: e.from_status,
+        toStatus: e.to_status,
+        actorId: e.actor_id,
+        note: e.note,
+        createdAt: e.created_at,
+      }))
+  );
+}
+
+async function findOrderIdByNumber(orderNumber) {
+  const order = db.orders.find((o) => o.orderNumber === orderNumber);
+  return order ? { id: order.id, status: order.status } : null;
+}
+
 module.exports = {
   findUserById,
   upsertGoogleUser,
@@ -247,6 +301,9 @@ module.exports = {
   toggleLike,
   createOrder,
   findOrderByIdempotencyKey,
+  updateOrderStatus,
+  getOrderEvents,
+  findOrderIdByNumber,
   createSession,
   findSessionByTokenHash,
   markSessionUsed,

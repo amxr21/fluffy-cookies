@@ -19,6 +19,7 @@ const productsRoutes = require("./routes/productsRoutes");
 const cartRoutes = require("./routes/cartRoutes");
 const ordersRoutes = require("./routes/ordersRoutes");
 const likesRoutes = require("./routes/likesRoutes");
+const adminRoutes = require("./routes/adminRoutes");
 
 function createApp({ rateLimit: enableRateLimit = true } = {}) {
   const app = express();
@@ -104,6 +105,7 @@ function createApp({ rateLimit: enableRateLimit = true } = {}) {
   v1.use("/cart", cartRoutes);
   v1.use("/orders", ordersRoutes);
   v1.use("/likes", likesRoutes);
+  v1.use("/admin", adminRoutes);
   if (enableRateLimit) {
     v1.use("/auth", authLimiter);
     v1.use("/orders/track", trackLimiter);

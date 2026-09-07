@@ -9,6 +9,7 @@ const {
 } = require("../lib/money");
 const { toPublicOrder, toOwnerOrder } = require("../lib/orderView");
 const { readPageParams, paginated } = require("../lib/pagination");
+const mailer = require("../email/mailer");
 const {
   normalizeCode,
   validateDiscount,
@@ -123,6 +124,24 @@ const createOrder = async (req, res) => {
   }
 
   if (userId) await repo.clearCart(userId);
+
+  // Fire-and-forget: the order exists and matters more than its confirmation.
+  // `send` never throws, and the `.catch` is belt-and-braces against a future
+  // change making it do so — an unhandled rejection here would crash the
+  // process long after the response went out.
+  void mailer
+    .send("orderConfirmed", contact?.email, {
+      orderNumber: order.orderNumber,
+      totalMinor: order.totalMinor,
+      currency: order.currency,
+      items: priced.map((line) => ({
+        name_snapshot: line.name,
+        quantity: line.quantity,
+        unit_price_minor: line.unitPriceMinor,
+        currency: order.currency,
+      })),
+    })
+    .catch(() => {});
 
   res.status(201).json({
     orderNumber: order.orderNumber,

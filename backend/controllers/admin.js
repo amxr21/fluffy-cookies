@@ -9,6 +9,7 @@ const repo = require("../repo");
 const { notFound, conflict } = require("../errors/AppError");
 const { assertTransition, allowedNext } = require("../lib/orderStatus");
 const { toOwnerOrder } = require("../lib/orderView");
+const mailer = require("../email/mailer");
 const { readPageParams, paginated, slice } = require("../lib/pagination");
 
 /**
@@ -42,6 +43,18 @@ const setOrderStatus = async (req, res) => {
     throw conflict(
       `This order was changed to ${result.current} by someone else. Reload and try again.`
     );
+  }
+
+  // Tell the customer, when the new state is one they care about.
+  const notify = { ready: "orderReady", cancelled: "orderCancelled" }[result.to];
+  if (notify) {
+    const full = await repo.getOrderByNumber(orderNumber);
+    void mailer
+      .send(notify, full?.contact?.email, {
+        orderNumber,
+        fulfillment: full?.fulfillment,
+      })
+      .catch(() => {});
   }
 
   res.json({

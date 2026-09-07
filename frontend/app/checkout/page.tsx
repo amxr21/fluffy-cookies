@@ -28,10 +28,10 @@ const FULFILLMENT_OPTIONS = [
   { value: "Delivery", label: "Delivery" },
 ];
 
-type FormField = "name" | "phone" | "address" | "city" | "note";
+type FormField = "name" | "phone" | "email" | "address" | "city" | "note";
 
 /** Focus order for jumping to the first invalid field. */
-const FIELD_ORDER: FormField[] = ["name", "phone", "address", "city"];
+const FIELD_ORDER: FormField[] = ["name", "phone", "email", "address", "city"];
 
 /** UAE mobile numbers: 05X XXX XXXX, tolerant of spaces/dashes and +971. */
 const PHONE_RE = /^(?:\+?971|0)(?:\s|-)?5\d(?:\s|-)?\d{3}(?:\s|-)?\d{4}$/;
@@ -50,6 +50,13 @@ function validate(
   else if (!PHONE_RE.test(phone))
     errors.phone = "Enter a UAE mobile number, e.g. 050 123 4567.";
 
+  // Optional, but validated when given: a typo means the confirmation goes
+  // nowhere and the customer never knows why.
+  const email = form.email.trim();
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+    errors.email = "That email doesn't look right.";
+  }
+
   // Address only applies to delivery orders.
   if (fulfillment === "Delivery") {
     if (!form.address.trim()) errors.address = "Please enter your address.";
@@ -67,6 +74,7 @@ export default function CheckoutPage() {
   const [form, setForm] = useState({
     name: "",
     phone: "",
+    email: "",
     address: "",
     city: "",
     note: "",
@@ -235,6 +243,19 @@ export default function CheckoutPage() {
                 onChange={(e) => set("phone", e.target.value)}
               />
             </div>
+
+            <Input
+              label="Email"
+              type="email"
+              data-field="email"
+              error={errors.email}
+              autoComplete="email"
+              inputMode="email"
+              placeholder="you@example.com"
+              hint="Optional — we'll send your confirmation and let you know when it's ready."
+              value={form.email}
+              onChange={(e) => set("email", e.target.value)}
+            />
 
             <div className="flex flex-col gap-1 text-small text-navy/80">
               <span>Fulfillment</span>

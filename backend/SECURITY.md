@@ -4,7 +4,7 @@ Per ECOMMERCE-STANDARD.md B10.0. Written for the specific store rather than as a
 generic checklist: a surface inventory catches the one that matters, a checklist
 usually does not.
 
-Last reviewed: **2026-09-08**. Re-run after any change to auth, roles, pricing
+Last reviewed: **2026-09-09**. Re-run after any change to auth, roles, pricing
 or payments — and at a fixed cadence regardless.
 
 ---
@@ -15,10 +15,10 @@ or payments — and at a fixed cadence regardless.
 |---|---|---|---|---|
 | Storefront reads (`/products`) | Anyone, incl. bots | Scrape the catalogue | Broad per-IP rate limit | ✅ |
 | `POST /auth` | Anyone | Account takeover via a forged Google token | Google verifies the ID token; audience pinned; stricter auth rate limit | ✅ |
-| Cart / checkout | Any session | Price tampering, oversell | Server recomputes every total from the database; the body supplies only product ids and quantities | ✅ price · ❌ stock |
+| Cart / checkout | Any session | Price tampering, oversell | Server recomputes every total from the database; stock reserved by conditional UPDATE | ✅ |
 | `GET /orders/track/:n` | **Anyone with a number** | Enumerate other customers' orders and addresses | Unguessable order number, allowlist projection (no PII), dedicated rate limit | ✅ |
 | Customer routes (cart, likes, orders) | Any signed-in user | Read or modify another user's data (IDOR) | Identity comes from the token, never the body or the URL; a mismatched `:userId` is 403 | ✅ |
-| `/admin/*` | Anyone who finds it | Full store control, customer PII, refunds | `requireAdmin` re-checks the role against the database | ⚠️ middleware verified, no routes yet |
+| `/admin/*` | Anyone who finds it | Full store control, customer PII, refunds | `requireAdmin` re-checks the role against the database on every request | ✅ |
 | Payment webhooks | Anyone on the internet | Mark an unpaid order paid | Signature verification + idempotent handlers | ❌ not built |
 | Upload endpoints | — | Malware host, stored XSS | — | n/a, no uploads |
 | The database | Whoever finds the host | Everything | Private networking, no public accessibility | ⚠️ deploy-time, unverified |
@@ -65,13 +65,18 @@ Tracked, not forgotten. Each is a wave item.
 - **No email verification** — an account can order without proving the address.
 - **No password reset or lockout** — Google is the only identity today, so there
   is no password to reset; both land with email/password auth if it is added.
-- **No stock model** — every product is infinitely orderable. Not a security
-  hole on its own, but oversell under a promotion is the same class of race.
-- **No CSP on the frontend** — the API sets `helmet` with CSP off (correct for
-  a JSON API), but the storefront ships no policy.
+- **CSP ships, but with `unsafe-inline` on scripts.** Next injects inline
+  bootstrap scripts; removing it needs nonce plumbing through the document,
+  which is real work rather than a config line. The policy is otherwise tight —
+  every allowed host is there because something specific needs it — and
+  `unsafe-eval` is development-only.
 - **Database exposure is unverified** — "not reachable from an arbitrary
   machine" is a deploy-time property and has not been tested.
 - **No dependency audit in CI** — Dependabot opens PRs; nothing fails a build.
+- **No uptime monitor.** `/health` exists and answers correctly; nothing is
+  watching it, so an outage is noticed by a customer rather than by us.
+- **Backup restore is unrehearsed.** See RUNBOOK.md — an untested backup is a
+  hope, and the time to find out is not during an incident.
 
 ## The twelve-attack review
 
@@ -88,9 +93,9 @@ deployed instance.
 | 2 | Call an admin route with a customer token | `accessControl.test.js` | ☐ |
 | 3 | Read another user's order, cart and likes by id | `accessControl.test.js` | ☐ |
 | 4 | Promote yourself via a `role` field | `accessControl.test.js` | ☐ |
-| 5 | Reuse an expired / over-limit discount code | — (not built) | ☐ |
+| 5 | Reuse an expired / over-limit discount code | `discounts.test.js` | ☐ |
 | 6 | Replay a payment webhook; forge one | — (not built) | ☐ |
-| 7 | Two concurrent orders for the last unit | — (no stock model) | ☐ |
+| 7 | Two concurrent orders for the last unit | `stock.test.js` | ☐ |
 | 8 | Brute-force order numbers against tracking | `orderPrivacy.test.js` | ☐ |
 | 9 | Store `<script>` in a review, open the admin queue | — (no reviews) | ☐ |
 | 10 | Hit a rate limit from two IPs, confirm it is per-IP | — | ☐ |
@@ -105,5 +110,8 @@ limit from one machine and confirming a second is unaffected.
 
 ## Reporting a vulnerability
 
-`security.txt` is not published yet (B10.9). Until it is, report to the
-repository owner directly.
+`security.txt` is published at `/.well-known/security.txt`.
+
+**The mailbox it names has not been confirmed to exist.** A security contact
+that bounces is worse than none, because a researcher who cannot reach you
+discloses publicly instead. Confirm it before launch.

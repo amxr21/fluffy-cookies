@@ -8,6 +8,7 @@
 const logger = require("../logger");
 const config = require("../config");
 const { AppError, notFound } = require("../errors/AppError");
+const errorTracker = require("../lib/errorTracker");
 
 const notFoundHandler = (req, _res, next) => {
   next(notFound(`Route not found: ${req.method} ${req.originalUrl}`));
@@ -33,6 +34,15 @@ const errorHandler = (err, req, res, _next) => {
     ip: req.ip,
     stack: err.stack,
     details,
+  });
+
+  // Only unexpected errors reach the tracker — `capture` decides, so the rule
+  // lives in one place rather than being re-implemented per call site.
+  errorTracker.capture(err, {
+    requestId: req.id,
+    userId: req.user?.id,
+    route: req.originalUrl,
+    method: req.method,
   });
 
   // requestId goes to the client on purpose: when a customer reports a failure,

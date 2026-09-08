@@ -58,6 +58,17 @@ const orderStatusSchema = z.object({
 
 const productIdParam = z.object({ productId: id });
 
+const createIntentSchema = z.object({
+  orderNumber: z.string().min(2).max(40),
+});
+
+const refundSchema = z.object({
+  // Omitted means "refund what remains" — the controller computes it, so the
+  // client cannot name an amount larger than was paid.
+  amountMinor: z.coerce.number().int().positive().optional(),
+  reason: z.string().max(255).optional(),
+});
+
 const discountCheckSchema = z.object({
   code: z.string().min(1).max(32),
   subtotal_minor: z.coerce.number().int().min(0),
@@ -91,4 +102,6 @@ module.exports = {
   productIdParam,
   stockSchema,
   discountCheckSchema,
+  createIntentSchema,
+  refundSchema,
 };

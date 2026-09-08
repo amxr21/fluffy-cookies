@@ -21,6 +21,9 @@ const cartRoutes = require("./routes/cartRoutes");
 const ordersRoutes = require("./routes/ordersRoutes");
 const likesRoutes = require("./routes/likesRoutes");
 const adminRoutes = require("./routes/adminRoutes");
+const paymentsRoutes = require("./routes/paymentsRoutes");
+const { handleWebhook } = require("./controllers/payments");
+const asyncHandler = require("./middleware/asyncHandler");
 
 function createApp({ rateLimit: enableRateLimit = true } = {}) {
   const app = express();
@@ -76,6 +79,15 @@ function createApp({ rateLimit: enableRateLimit = true } = {}) {
   });
 
   if (enableRateLimit) app.use(generalLimiter);
+  // BEFORE express.json(), and deliberately so: signature verification hashes
+  // the raw bytes. A parsed-then-restringified body will not match, because key
+  // order and whitespace change what was signed.
+  app.post(
+    "/api/v1/payments/webhook",
+    express.raw({ type: "application/json", limit: "1mb" }),
+    asyncHandler(handleWebhook)
+  );
+
   app.use(express.json());
   // Auth tokens travel as httpOnly cookies (lib/tokens.js), so they must be
   // parsed before any route that reads req.user.
@@ -135,6 +147,7 @@ function createApp({ rateLimit: enableRateLimit = true } = {}) {
   v1.use("/orders", ordersRoutes);
   v1.use("/likes", likesRoutes);
   v1.use("/admin", adminRoutes);
+  v1.use("/payments", paymentsRoutes);
   // Discount checking is a guessing oracle if it is fast and unlimited: try
   // codes until one works. B10.4 names this directly. The generic message from
   // lib/discounts.js is the other half of the defence.

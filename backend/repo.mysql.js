@@ -203,8 +203,8 @@ async function createOrder({
     const result = await q(
       `INSERT INTO orders
          (order_number, user_id, status, total_minor, discount_code, discount_minor,
-          currency, fulfillment, payment, contact)
-       VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)`,
+          shipping_minor, shipping_zone, currency, fulfillment, payment, contact)
+       VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         orderNumber,
         userId || null,
@@ -680,6 +680,105 @@ async function listDiscounts() {
   );
 }
 
+// --- payments ---
+async function createPayment({ orderId, provider, providerRef, amountMinor, currency, status, raw }) {
+  const result = await query(
+    `INSERT INTO payments (order_id, provider, provider_ref, status, amount_minor, currency, raw_payload_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [orderId, provider, providerRef, status || "pending", amountMinor, currency, raw ? JSON.stringify(raw) : null],
+    { op: "createPayment" }
+  );
+  return { id: result.insertId, providerRef, status: status || "pending" };
+}
+
+async function findPaymentByRef(provider, providerRef) {
+  const rows = await query(
+    `SELECT id, order_id AS orderId, provider, provider_ref AS providerRef, status,
+            amount_minor AS amountMinor, currency
+     FROM payments WHERE provider = ? AND provider_ref = ?`,
+    [provider, providerRef],
+    { op: "findPaymentByRef" }
+  );
+  return rows[0] || null;
+}
+
+async function getPaymentsForOrder(orderId) {
+  return query(
+    `SELECT id, provider, provider_ref AS providerRef, status,
+            amount_minor AS amountMinor, currency, created_at AS createdAt
+     FROM payments WHERE order_id = ? ORDER BY created_at`,
+    [orderId],
+    { op: "getPaymentsForOrder" }
+  );
+}
+
+/**
+ * Record a webhook as processed, and say whether it was new.
+ *
+ * The event id is the primary key, so a duplicate delivery is refused by the
+ * database rather than by remembering to check. Providers retry by design.
+ */
+async function claimWebhookEvent({ eventId, provider, eventType }) {
+  try {
+    await query(
+      "INSERT INTO webhook_events (event_id, provider, event_type) VALUES (?, ?, ?)",
+      [eventId, provider, eventType],
+      { op: "claimWebhookEvent" }
+    );
+    return { isNew: true };
+  } catch (err) {
+    // A duplicate is the expected path, not a failure.
+    if (err.code === "CONFLICT" || err.status === 409) return { isNew: false };
+    throw err;
+  }
+}
+
+/** Mark a payment paid and the order with it, atomically. */
+async function markPaymentSucceeded({ paymentId, orderId, raw }) {
+  return withTransaction(async (q) => {
+    await q(
+      "UPDATE payments SET status = 'succeeded', raw_payload_json = ? WHERE id = ?",
+      [raw ? JSON.stringify(raw) : null, paymentId],
+      { op: "markPaymentSucceeded.payment" }
+    );
+    await q("UPDATE orders SET payment_status = 'paid' WHERE id = ?", [orderId], {
+      op: "markPaymentSucceeded.order",
+    });
+    return { paymentId, orderId };
+  });
+}
+
+async function markPaymentFailed({ paymentId, orderId }) {
+  return withTransaction(async (q) => {
+    await q("UPDATE payments SET status = 'failed' WHERE id = ?", [paymentId], {
+      op: "markPaymentFailed.payment",
+    });
+    await q("UPDATE orders SET payment_status = 'failed' WHERE id = ?", [orderId], {
+      op: "markPaymentFailed.order",
+    });
+  });
+}
+
+/** Total already refunded, so a refund cannot exceed what was paid. */
+async function getRefundedTotal(paymentId) {
+  const rows = await query(
+    "SELECT COALESCE(SUM(amount_minor), 0) AS n FROM refunds WHERE payment_id = ? AND status <> 'failed'",
+    [paymentId],
+    { op: "getRefundedTotal" }
+  );
+  return Number(rows[0]?.n || 0);
+}
+
+async function createRefund({ paymentId, amountMinor, reason, providerRef, status, actorId }) {
+  const result = await query(
+    `INSERT INTO refunds (payment_id, amount_minor, reason, provider_ref, status, actor_id)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [paymentId, amountMinor, reason || null, providerRef || null, status || "pending", actorId || null],
+    { op: "createRefund" }
+  );
+  return { id: result.insertId, amountMinor, status: status || "pending" };
+}
+
 module.exports = {
   findUserById,
   upsertGoogleUser,
@@ -698,6 +797,14 @@ module.exports = {
   toggleLike,
   createOrder,
   findOrderByIdempotencyKey,
+  createPayment,
+  findPaymentByRef,
+  getPaymentsForOrder,
+  claimWebhookEvent,
+  markPaymentSucceeded,
+  markPaymentFailed,
+  getRefundedTotal,
+  createRefund,
   findDiscountByCode,
   countUserRedemptions,
   listDiscounts,

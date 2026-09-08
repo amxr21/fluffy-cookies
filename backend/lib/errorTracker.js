@@ -38,7 +38,6 @@ function init() {
   try {
     // Required lazily: a deployment without tracking should not need the
     // package installed at all.
-    // eslint-disable-next-line global-require
     const Sentry = require("@sentry/node");
 
     Sentry.init({

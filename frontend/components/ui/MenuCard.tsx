@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 
 import { Button } from "@/components/ui/Button";
 import { FiHeart } from "react-icons/fi";
@@ -43,16 +44,22 @@ export function MenuCard({ item }: { item: MenuItem }) {
             <FiHeart className="size-4" aria-hidden />
           )}
         </button>
-        <Image
-          src={item.image}
-          alt={item.name}
+        <Link href={`/menu/${item.id}`} aria-label={`View ${item.name}`}>
+          <Image
+            src={item.image}
+            alt={item.name}
           fill
-          className="object-cover transition-transform duration-500 group-hover:scale-105"
-        />
+            className="object-cover transition-transform duration-500 group-hover:scale-105"
+          />
+        </Link>
       </div>
 
       <div className="flex flex-1 flex-col pt-1 text-center">
-        <h3 className="text-h3 font-semibold text-navy">{item.name}</h3>
+        <h3 className="text-h3 font-semibold text-navy">
+          <Link href={`/menu/${item.id}`} className="hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy">
+            {item.name}
+          </Link>
+        </h3>
         <p className="mt-1 flex-1 text-caption italic text-navy/60">{item.description}</p>
 
         <Button fullWidth onClick={handleOrder} className="mt-4">

@@ -42,6 +42,46 @@ async function listProducts({ limit, offset } = {}) {
   });
 }
 
+/**
+ * Escape LIKE wildcards in a user's search term.
+ *
+ * Without this, a customer searching for "50%" matches every product, and "_"
+ * matches any single character. Parameterisation stops injection but does not
+ * touch wildcards — they are data as far as the driver is concerned.
+ */
+const escapeLike = (term) => String(term).replace(/[%_\\]/g, (c) => `\\${c}`);
+
+/**
+ * Search by name or description.
+ *
+ * A LIKE query, which the standard explicitly allows at Tier 1 ("even if it's
+ * a LIKE query at Tier 1"). With 16 products anything more is premature; when
+ * the catalogue grows this is the one function to replace.
+ *
+ * The term is escaped for LIKE wildcards before being parameterised — without
+ * it a customer searching for "50%" matches everything.
+ */
+async function searchProducts(term, { limit, offset }) {
+  const like = `%${escapeLike(term)}%`;
+  return query(
+    `SELECT * FROM products
+      WHERE name LIKE ? OR description LIKE ?
+      ORDER BY id LIMIT ? OFFSET ?`,
+    [like, like, limit, offset],
+    { op: "searchProducts" }
+  );
+}
+
+async function countSearchProducts(term) {
+  const like = `%${escapeLike(term)}%`;
+  const rows = await query(
+    "SELECT COUNT(*) AS n FROM products WHERE name LIKE ? OR description LIKE ?",
+    [like, like],
+    { op: "countSearchProducts" }
+  );
+  return Number(rows[0]?.n || 0);
+}
+
 async function countProducts() {
   const rows = await query("SELECT COUNT(*) AS n FROM products", [], {
     op: "countProducts",
@@ -645,6 +685,8 @@ module.exports = {
   upsertGoogleUser,
   listProducts,
   countProducts,
+  searchProducts,
+  countSearchProducts,
   countOrdersByUser,
   findProductById,
   getCart,

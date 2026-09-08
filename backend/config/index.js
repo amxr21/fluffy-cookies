@@ -56,6 +56,16 @@ const config = {
     jwtAudience: process.env.JWT_AUDIENCE || "fluffy-storefront",
   },
 
+  sentry: {
+    // Unset means tracking is off: development and CI need no account, and no
+    // event can leak from a developer machine.
+    dsn: process.env.SENTRY_DSN || "",
+    // Ties an event to the deploy that produced it. Without it, "when did this
+    // start" is unanswerable.
+    release: process.env.SENTRY_RELEASE || process.env.GIT_SHA || "",
+    tracesSampleRate: Number(process.env.SENTRY_TRACES_SAMPLE_RATE) || 0,
+  },
+
   email: {
     // Unset means the console adapter: the whole pipeline runs, nothing is
     // sent. Lets development and CI exercise email without a vendor account.

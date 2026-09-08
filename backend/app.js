@@ -11,6 +11,7 @@ const cookieParser = require("cookie-parser");
 const config = require("./config");
 const { ping } = require("./dbClient");
 const requestId = require("./middleware/requestId");
+const logger = require("./logger");
 const requestLogger = require("./middleware/requestLogger");
 const { notFoundHandler, errorHandler } = require("./middleware/errorHandler");
 
@@ -81,12 +82,40 @@ function createApp({ rateLimit: enableRateLimit = true } = {}) {
   app.use(cookieParser());
   app.use(requestLogger);
 
+  /**
+   * Health check, for an uptime monitor.
+   *
+   * Answers three things a monitor needs and a human reading an alert wants:
+   * whether the database is reachable, how long that took, and which release
+   * is running. Without the release, "when did this start" is unanswerable at
+   * 3am; without the duration, a database that is up but crawling looks
+   * identical to a healthy one.
+   *
+   * Deliberately unauthenticated and unversioned: a monitor should not carry
+   * credentials, and it should not have to follow an API version bump. It
+   * exposes nothing an attacker can use — no counts, no versions of anything
+   * but our own release.
+   */
   app.get("/health", async (_req, res) => {
+    const startedAt = Date.now();
     try {
       await ping();
-      res.json({ status: "ok", db: config.useFileData ? "file" : "up" });
-    } catch {
-      res.status(503).json({ status: "degraded", db: "down" });
+      res.json({
+        status: "ok",
+        db: config.useFileData ? "file" : "up",
+        dbLatencyMs: Date.now() - startedAt,
+        release: config.sentry.release || "unknown",
+        uptimeSeconds: Math.round(process.uptime()),
+      });
+    } catch (err) {
+      // 503 rather than 500: this is "temporarily unable to serve", which is
+      // what a monitor and a load balancer both need to see to back off.
+      logger.error("health.db_unreachable", { message: err?.message });
+      res.status(503).json({
+        status: "degraded",
+        db: "down",
+        release: config.sentry.release || "unknown",
+      });
     }
   });
   // /health and / stay unversioned: they describe the deployment, not the API

@@ -23,15 +23,28 @@ const PAYMENT_OPTIONS = [
   { value: "online", label: "Pay Online", disabled: true, note: "Coming soon" },
 ];
 
+/** Emirates Fluffy delivers to. Mirrors backend/lib/shipping.js — the server
+ *  re-resolves the zone and price, so this list is for choosing, not pricing. */
+const EMIRATE_OPTIONS = [
+  { value: "Al Ain", label: "Al Ain" },
+  { value: "Abu Dhabi", label: "Abu Dhabi" },
+  { value: "Dubai", label: "Dubai" },
+  { value: "Sharjah", label: "Sharjah" },
+  { value: "Ajman", label: "Ajman" },
+  { value: "Umm Al Quwain", label: "Umm Al Quwain" },
+  { value: "Ras Al Khaimah", label: "Ras Al Khaimah" },
+  { value: "Fujairah", label: "Fujairah" },
+];
+
 const FULFILLMENT_OPTIONS = [
   { value: "Pickup", label: "Pickup" },
   { value: "Delivery", label: "Delivery" },
 ];
 
-type FormField = "name" | "phone" | "address" | "city" | "note";
+type FormField = "name" | "phone" | "email" | "emirate" | "address" | "city" | "note";
 
 /** Focus order for jumping to the first invalid field. */
-const FIELD_ORDER: FormField[] = ["name", "phone", "address", "city"];
+const FIELD_ORDER: FormField[] = ["name", "phone", "email", "emirate", "address", "city"];
 
 /** UAE mobile numbers: 05X XXX XXXX, tolerant of spaces/dashes and +971. */
 const PHONE_RE = /^(?:\+?971|0)(?:\s|-)?5\d(?:\s|-)?\d{3}(?:\s|-)?\d{4}$/;
@@ -50,8 +63,18 @@ function validate(
   else if (!PHONE_RE.test(phone))
     errors.phone = "Enter a UAE mobile number, e.g. 050 123 4567.";
 
+  // Optional, but validated when given: a typo means the confirmation goes
+  // nowhere and the customer never knows why.
+  const email = form.email.trim();
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+    errors.email = "That email doesn't look right.";
+  }
+
   // Address only applies to delivery orders.
   if (fulfillment === "Delivery") {
+    // The emirate is what the delivery zone and fee are resolved from, so a
+    // delivery order without one cannot be priced.
+    if (!form.emirate.trim()) errors.emirate = "Please choose your emirate.";
     if (!form.address.trim()) errors.address = "Please enter your address.";
     if (!form.city.trim()) errors.city = "Please enter your city.";
   }
@@ -67,6 +90,8 @@ export default function CheckoutPage() {
   const [form, setForm] = useState({
     name: "",
     phone: "",
+    email: "",
+    emirate: "",
     address: "",
     city: "",
     note: "",
@@ -74,6 +99,16 @@ export default function CheckoutPage() {
   const [fulfillment, setFulfillment] = useState("Pickup");
   const [payment, setPayment] = useState<PaymentMethod>("cash");
   const [discount, setDiscount] = useState("");
+  /**
+   * What the server says the code is worth. Never computed client-side: the
+   * total shown must be the total charged, and only the server knows the rules.
+   */
+  const [applied, setApplied] = useState<{
+    code: string;
+    discountMinor: number;
+  } | null>(null);
+  const [discountMessage, setDiscountMessage] = useState<string | null>(null);
+  const [checkingCode, setCheckingCode] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   /** Field errors shown inline. Populated on submit, cleared as the user types. */
   const [errors, setErrors] = useState<Partial<Record<FormField, string>>>({});
@@ -83,6 +118,40 @@ export default function CheckoutPage() {
    * rather than a second order. Cleared only once an order is actually placed.
    */
   const idempotencyKey = useRef<string | null>(null);
+
+  const totalMinor = subtotalMinor - (applied?.discountMinor ?? 0);
+
+  /** Ask the server what the code is worth. Checking never spends a use. */
+  const applyDiscount = async () => {
+    const code = discount.trim();
+    if (!code) return;
+
+    setCheckingCode(true);
+    const res = await postJSON<{
+      valid: boolean;
+      code?: string;
+      discountMinor?: number;
+      message?: string;
+    }>("/orders/discount/check", { code, subtotal_minor: subtotalMinor });
+    setCheckingCode(false);
+
+    if (!res.ok) {
+      setApplied(null);
+      setDiscountMessage(res.error.message);
+      return;
+    }
+    if (!res.data?.valid) {
+      setApplied(null);
+      setDiscountMessage(res.data?.message ?? "That code isn't valid.");
+      return;
+    }
+
+    setApplied({
+      code: res.data.code!,
+      discountMinor: res.data.discountMinor!,
+    });
+    setDiscountMessage(null);
+  };
 
   const set = (k: keyof typeof form, v: string) => {
     setForm((f) => ({ ...f, [k]: v }));
@@ -131,7 +200,7 @@ export default function CheckoutPage() {
       user_id: userId,
       fulfillment,
       payment,
-      discount_code: discount || undefined,
+      discount_code: applied?.code,
       contact: form,
       items: lines.map((l) => ({ product_id: l.productId, quantity: l.quantity })),
       },
@@ -192,6 +261,19 @@ export default function CheckoutPage() {
               />
             </div>
 
+            <Input
+              label="Email"
+              type="email"
+              data-field="email"
+              error={errors.email}
+              autoComplete="email"
+              inputMode="email"
+              placeholder="you@example.com"
+              hint="Optional — we'll send your confirmation and let you know when it's ready."
+              value={form.email}
+              onChange={(e) => set("email", e.target.value)}
+            />
+
             <div className="flex flex-col gap-1 text-small text-navy/80">
               <span>Fulfillment</span>
               <Dropdown
@@ -204,6 +286,18 @@ export default function CheckoutPage() {
 
             {fulfillment === "Delivery" && (
               <div className="grid gap-4 sm:grid-cols-2">
+                <div className="flex flex-col gap-1 text-small text-navy/80 sm:col-span-2">
+                  <span>Emirate</span>
+                  <Dropdown
+                    ariaLabel="Emirate"
+                    value={form.emirate}
+                    options={EMIRATE_OPTIONS}
+                    onChange={(v) => set("emirate", v)}
+                  />
+                  {errors.emirate && (
+                    <span className="text-caption text-red-700">{errors.emirate}</span>
+                  )}
+                </div>
                 <Input
                   label="Address"
                   required
@@ -258,13 +352,32 @@ export default function CheckoutPage() {
               )}
             </ul>
 
-            <Input
-              label="Discount code"
-              placeholder="e.g. FLUFFY10"
-              autoCapitalize="characters"
-              value={discount}
-              onChange={(e) => setDiscount(e.target.value)}
-            />
+            <div className="flex items-end gap-2">
+              <Input
+                label="Discount code"
+                className="flex-1"
+                placeholder="e.g. FLUFFY10"
+                autoCapitalize="characters"
+                error={discountMessage ?? undefined}
+                hint={applied ? `${applied.code} applied` : undefined}
+                value={discount}
+                onChange={(e) => {
+                  setDiscount(e.target.value);
+                  // Editing invalidates what was applied — the total must never
+                  // show a discount for a code the field no longer holds.
+                  if (applied) setApplied(null);
+                  if (discountMessage) setDiscountMessage(null);
+                }}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={applyDiscount}
+                disabled={checkingCode || !discount.trim()}
+              >
+                {checkingCode ? "Checking…" : "Apply"}
+              </Button>
+            </div>
 
             <div className="flex flex-col gap-1 text-small text-navy/80">
               <span>Payment method</span>
@@ -276,10 +389,17 @@ export default function CheckoutPage() {
               />
             </div>
 
+            {applied && (
+              <div className="flex items-center justify-between text-small text-navy/80">
+                <span>Discount ({applied.code})</span>
+                <span>-{formatMinor(applied.discountMinor)}</span>
+              </div>
+            )}
+
             <div className="flex items-center justify-between border-t border-navy/20 pt-4">
               <span className="text-h4 font-bold text-navy">Total</span>
               <span className="text-h4 font-bold text-navy">
-                {formatMinor(subtotalMinor)}
+                {formatMinor(totalMinor)}
               </span>
             </div>
 

@@ -6,6 +6,7 @@ const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
+const cookieParser = require("cookie-parser");
 
 const config = require("./config");
 const { ping } = require("./dbClient");
@@ -18,6 +19,7 @@ const productsRoutes = require("./routes/productsRoutes");
 const cartRoutes = require("./routes/cartRoutes");
 const ordersRoutes = require("./routes/ordersRoutes");
 const likesRoutes = require("./routes/likesRoutes");
+const adminRoutes = require("./routes/adminRoutes");
 
 function createApp({ rateLimit: enableRateLimit = true } = {}) {
   const app = express();
@@ -54,8 +56,29 @@ function createApp({ rateLimit: enableRateLimit = true } = {}) {
     message: { error: { message: "Too many login attempts, please try again later.", code: "RATE_LIMITED" } },
   });
 
+  // Order tracking takes no auth, by design — a gift recipient can follow an
+  // order without an account. That also makes it the one endpoint an attacker
+  // can walk to enumerate orders, so it gets its own tighter budget. A real
+  // customer refreshes a handful of times; 30 lookups per 15 minutes is far
+  // more than that and far less than a scraping run needs.
+  const trackLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+      error: {
+        message: "Too many tracking lookups, please try again later.",
+        code: "RATE_LIMITED",
+      },
+    },
+  });
+
   if (enableRateLimit) app.use(generalLimiter);
   app.use(express.json());
+  // Auth tokens travel as httpOnly cookies (lib/tokens.js), so they must be
+  // parsed before any route that reads req.user.
+  app.use(cookieParser());
   app.use(requestLogger);
 
   app.get("/health", async (_req, res) => {
@@ -82,7 +105,28 @@ function createApp({ rateLimit: enableRateLimit = true } = {}) {
   v1.use("/cart", cartRoutes);
   v1.use("/orders", ordersRoutes);
   v1.use("/likes", likesRoutes);
-  if (enableRateLimit) v1.use("/auth", authLimiter);
+  v1.use("/admin", adminRoutes);
+  // Discount checking is a guessing oracle if it is fast and unlimited: try
+  // codes until one works. B10.4 names this directly. The generic message from
+  // lib/discounts.js is the other half of the defence.
+  const discountLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+      error: {
+        message: "Too many code attempts, please try again later.",
+        code: "RATE_LIMITED",
+      },
+    },
+  });
+
+  if (enableRateLimit) {
+    v1.use("/auth", authLimiter);
+    v1.use("/orders/track", trackLimiter);
+    v1.use("/orders/discount", discountLimiter);
+  }
   v1.use("/", authRoutes);
 
   app.use("/api/v1", v1);

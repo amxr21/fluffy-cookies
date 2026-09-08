@@ -32,6 +32,12 @@ const db = {
   cart_items: [], // { user_id, product_id, quantity }
   likes: [], // { user_id, product_id }
   order_idempotency: [], // { idempotency_key, user_id, order_id }
+  discounts: [], // { id, code, type, value, min_subtotal_minor, usage_limit, per_user_limit, used_count, active, starts_at, ends_at }
+  discount_redemptions: [], // { id, discount_id, order_id, user_id, amount_minor }
+  inventory: [], // { product_id, on_hand, reserved, low_stock_threshold, track_stock }
+  inventory_ledger: [], // { id, product_id, delta, reason, ref_type, ref_id, actor_id, created_at }
+  order_events: [], // { id, order_id, from_status, to_status, actor_id, note, created_at }
+  sessions: [], // { id, user_id, token_hash, family_id, used_at, revoked_at, expires_at, user_agent, ip }
   orders: [], // { id, orderNumber, user_id, status, totalMinor, currency, fulfillment, payment, contact, items, createdAt }
 };
 

@@ -1,0 +1,13 @@
+# Fluffy — security contact
+# https://www.rfc-editor.org/rfc/rfc9116
+#
+# Expires must stay in the future or scanners treat this file as stale.
+# Review it when the threat model is reviewed (backend/SECURITY.md).
+#
+# TODO BEFORE LAUNCH: confirm this mailbox exists and is monitored. A security
+# contact that bounces is worse than none — a researcher who cannot reach you
+# discloses publicly instead.
+
+Contact: mailto:security@fluffy.ae
+Expires: 2027-09-08T00:00:00.000Z
+Preferred-Languages: en, ar

@@ -524,6 +524,107 @@ async function listDiscounts() {
   }));
 }
 
+// --- payments ---
+let nextPaymentId = 1;
+let nextRefundId = 1;
+
+async function createPayment({ orderId, provider, providerRef, amountMinor, currency, status, raw }) {
+  const row = {
+    id: nextPaymentId++,
+    order_id: Number(orderId),
+    provider,
+    provider_ref: providerRef,
+    status: status || "pending",
+    amount_minor: amountMinor,
+    currency,
+    raw_payload_json: raw || null,
+    created_at: new Date().toISOString(),
+  };
+  db.payments.push(row);
+  return { id: row.id, providerRef, status: row.status };
+}
+
+async function findPaymentByRef(provider, providerRef) {
+  const row = db.payments.find(
+    (p) => p.provider === provider && p.provider_ref === providerRef
+  );
+  if (!row) return null;
+  return {
+    id: row.id,
+    orderId: row.order_id,
+    provider: row.provider,
+    providerRef: row.provider_ref,
+    status: row.status,
+    amountMinor: row.amount_minor,
+    currency: row.currency,
+  };
+}
+
+async function getPaymentsForOrder(orderId) {
+  return db.payments
+    .filter((p) => p.order_id === Number(orderId))
+    .map((p) => ({
+      id: p.id,
+      provider: p.provider,
+      providerRef: p.provider_ref,
+      status: p.status,
+      amountMinor: p.amount_minor,
+      currency: p.currency,
+      createdAt: p.created_at,
+    }));
+}
+
+/** Mirrors the PRIMARY KEY: a duplicate event id is refused, not re-processed. */
+async function claimWebhookEvent({ eventId, provider, eventType }) {
+  if (db.webhook_events.some((e) => e.event_id === eventId)) return { isNew: false };
+  db.webhook_events.push({
+    event_id: eventId,
+    provider,
+    event_type: eventType,
+    processed_at: new Date().toISOString(),
+  });
+  return { isNew: true };
+}
+
+async function markPaymentSucceeded({ paymentId, orderId, raw }) {
+  const payment = db.payments.find((p) => p.id === Number(paymentId));
+  if (payment) {
+    payment.status = "succeeded";
+    payment.raw_payload_json = raw || null;
+  }
+  const order = db.orders.find((o) => o.id === Number(orderId));
+  if (order) order.payment_status = "paid";
+  return { paymentId, orderId };
+}
+
+async function markPaymentFailed({ paymentId, orderId }) {
+  const payment = db.payments.find((p) => p.id === Number(paymentId));
+  if (payment) payment.status = "failed";
+  const order = db.orders.find((o) => o.id === Number(orderId));
+  if (order) order.payment_status = "failed";
+}
+
+async function getRefundedTotal(paymentId) {
+  return db.refunds
+    .filter((r) => r.payment_id === Number(paymentId) && r.status !== "failed")
+    .reduce((n, r) => n + r.amount_minor, 0);
+}
+
+async function createRefund({ paymentId, amountMinor, reason, providerRef, status, actorId }) {
+  const row = {
+    id: nextRefundId++,
+    payment_id: Number(paymentId),
+    amount_minor: amountMinor,
+    reason: reason || null,
+    provider_ref: providerRef || null,
+    status: status || "pending",
+    actor_id: actorId || null,
+    created_at: new Date().toISOString(),
+  };
+  db.refunds.push(row);
+  return { id: row.id, amountMinor, status: row.status };
+}
+
 module.exports = {
   findUserById,
   upsertGoogleUser,
@@ -542,6 +643,14 @@ module.exports = {
   toggleLike,
   createOrder,
   findOrderByIdempotencyKey,
+  createPayment,
+  findPaymentByRef,
+  getPaymentsForOrder,
+  claimWebhookEvent,
+  markPaymentSucceeded,
+  markPaymentFailed,
+  getRefundedTotal,
+  createRefund,
   findDiscountByCode,
   countUserRedemptions,
   listDiscounts,

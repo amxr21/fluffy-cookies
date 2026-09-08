@@ -56,6 +56,18 @@ const config = {
     jwtAudience: process.env.JWT_AUDIENCE || "fluffy-storefront",
   },
 
+  payments: {
+    // "stub" until a real provider is configured, so development and CI run
+    // the whole payment path without an account or a real charge.
+    provider: process.env.PAYMENT_PROVIDER || "stub",
+    secretKey: process.env.STRIPE_SECRET_KEY || "",
+    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || "",
+    // How stale a webhook may be before it is refused. Five minutes is
+    // Stripe's own default: long enough for a slow retry, short enough that a
+    // captured request cannot be replayed days later.
+    webhookToleranceSeconds: Number(process.env.WEBHOOK_TOLERANCE_SECONDS) || 300,
+  },
+
   sentry: {
     // Unset means tracking is off: development and CI need no account, and no
     // event can leak from a developer machine.

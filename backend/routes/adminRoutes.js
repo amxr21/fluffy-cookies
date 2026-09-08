@@ -7,6 +7,7 @@ const {
   orderStatusSchema,
   productIdParam,
   stockSchema,
+  refundSchema,
 } = require("../validation/schemas");
 const admin = require("../controllers/admin");
 
@@ -35,6 +36,13 @@ router.patch(
   "/stock/:productId",
   validate({ params: productIdParam, body: stockSchema }),
   asyncHandler(admin.setStock)
+);
+
+// Refunds are an admin action, and a destructive one — the actor is recorded.
+router.post(
+  "/orders/:orderNumber/refund",
+  validate({ params: orderNumberParam, body: refundSchema }),
+  asyncHandler(require("../controllers/payments").refundPayment)
 );
 
 module.exports = router;

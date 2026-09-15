@@ -1,11 +1,12 @@
-import { API_URL, AUTH_KEYS } from "@/lib/config";
+import { API_URL } from "@/lib/config";
 import { reportClientError } from "@/lib/clientLogger";
 
 /**
  * Central fetch wrapper for all client-side API calls. Never throws — callers
  * branch on `ok`. Adds a timeout, parses JSON safely, surfaces the backend's
- * `{ error: { message, code } }` shape, attaches the auth token, and reports
- * unexpected (5xx/network) failures. Mirrors the storefront template.
+ * `{ error: { message, code } }` shape, sends the httpOnly auth cookies, and
+ * reports unexpected (5xx/network) failures. On a 401 it refreshes the session
+ * once and replays the request.
  *
  *   { ok: true,  status, data }
  *   { ok: false, status, error: { message, code }, data? }
@@ -23,13 +24,35 @@ export type FetchResult<T> =
 type SafeFetchOptions = RequestInit & {
   timeoutMs?: number;
   baseUrl?: string;
+  /** Internal: set on the replay after a refresh, so a 401 cannot loop. */
+  __retried?: boolean;
 };
 
 const DEFAULT_TIMEOUT_MS = 15000;
 
-function getToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(AUTH_KEYS.token);
+/**
+ * A single in-flight refresh, shared by every caller.
+ *
+ * Without this, a page that fires four requests on mount and gets four 401s
+ * would run four refreshes — and because refresh tokens rotate, three of them
+ * would present an already-used token and trip reuse detection, revoking the
+ * session and signing the user out. The bug looks like "randomly logged out".
+ */
+let refreshInFlight: Promise<boolean> | null = null;
+
+async function refreshSession(): Promise<boolean> {
+  if (!refreshInFlight) {
+    refreshInFlight = fetch(`${API_URL}/auth/refresh`, {
+      method: "POST",
+      credentials: "include",
+    })
+      .then((res) => res.ok)
+      .catch(() => false)
+      .finally(() => {
+        refreshInFlight = null;
+      });
+  }
+  return refreshInFlight;
 }
 
 export async function safeFetch<T = unknown>(
@@ -56,13 +79,26 @@ export async function safeFetch<T = unknown>(
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   const headers = new Headers(init.headers);
-  const token = getToken();
-  if (token && !headers.has("Authorization")) {
-    headers.set("Authorization", `Bearer ${token}`);
-  }
 
   try {
-    const res = await fetch(url, { ...init, headers, signal: controller.signal });
+    // `credentials: "include"` sends the httpOnly auth cookies. Same-origin by
+    // default (next.config.ts proxies the API), so they stay SameSite=Lax.
+    const res = await fetch(url, {
+      ...init,
+      headers,
+      credentials: "include",
+      signal: controller.signal,
+    });
+
+    // The access token is short-lived by design, so a 401 mid-session is the
+    // expected path, not an error: refresh once and replay the request. Skipped
+    // for the refresh call itself, which would otherwise recurse.
+    if (res.status === 401 && !path.startsWith("/auth/refresh") && !options.__retried) {
+      const refreshed = await refreshSession();
+      if (refreshed) {
+        return safeFetch<T>(path, { ...options, __retried: true });
+      }
+    }
 
     let body: unknown = null;
     const text = await res.text();
@@ -171,3 +207,21 @@ export const deleteJSON = <T = unknown>(
     headers: jsonHeaders(options?.headers),
     body: body ? JSON.stringify(body) : undefined,
   });
+
+/**
+ * The envelope every list endpoint returns.
+ *
+ * `hasMore` rather than a page count: the server does not compute a second
+ * full scan just to render a "Next" button that only needs to know whether
+ * there is one.
+ */
+export type Paginated<T> = {
+  data: T[];
+  page: {
+    limit: number;
+    offset: number;
+    count: number;
+    hasMore: boolean;
+    total?: number;
+  };
+};

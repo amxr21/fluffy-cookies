@@ -6,10 +6,12 @@ const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
+const cookieParser = require("cookie-parser");
 
 const config = require("./config");
 const { ping } = require("./dbClient");
 const requestId = require("./middleware/requestId");
+const logger = require("./logger");
 const requestLogger = require("./middleware/requestLogger");
 const { notFoundHandler, errorHandler } = require("./middleware/errorHandler");
 
@@ -18,6 +20,10 @@ const productsRoutes = require("./routes/productsRoutes");
 const cartRoutes = require("./routes/cartRoutes");
 const ordersRoutes = require("./routes/ordersRoutes");
 const likesRoutes = require("./routes/likesRoutes");
+const adminRoutes = require("./routes/adminRoutes");
+const paymentsRoutes = require("./routes/paymentsRoutes");
+const { handleWebhook } = require("./controllers/payments");
+const asyncHandler = require("./middleware/asyncHandler");
 
 function createApp({ rateLimit: enableRateLimit = true } = {}) {
   const app = express();
@@ -54,16 +60,74 @@ function createApp({ rateLimit: enableRateLimit = true } = {}) {
     message: { error: { message: "Too many login attempts, please try again later.", code: "RATE_LIMITED" } },
   });
 
+  // Order tracking takes no auth, by design — a gift recipient can follow an
+  // order without an account. That also makes it the one endpoint an attacker
+  // can walk to enumerate orders, so it gets its own tighter budget. A real
+  // customer refreshes a handful of times; 30 lookups per 15 minutes is far
+  // more than that and far less than a scraping run needs.
+  const trackLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+      error: {
+        message: "Too many tracking lookups, please try again later.",
+        code: "RATE_LIMITED",
+      },
+    },
+  });
+
   if (enableRateLimit) app.use(generalLimiter);
+  // BEFORE express.json(), and deliberately so: signature verification hashes
+  // the raw bytes. A parsed-then-restringified body will not match, because key
+  // order and whitespace change what was signed.
+  app.post(
+    "/api/v1/payments/webhook",
+    express.raw({ type: "application/json", limit: "1mb" }),
+    asyncHandler(handleWebhook)
+  );
+
   app.use(express.json());
+  // Auth tokens travel as httpOnly cookies (lib/tokens.js), so they must be
+  // parsed before any route that reads req.user.
+  app.use(cookieParser());
   app.use(requestLogger);
 
+  /**
+   * Health check, for an uptime monitor.
+   *
+   * Answers three things a monitor needs and a human reading an alert wants:
+   * whether the database is reachable, how long that took, and which release
+   * is running. Without the release, "when did this start" is unanswerable at
+   * 3am; without the duration, a database that is up but crawling looks
+   * identical to a healthy one.
+   *
+   * Deliberately unauthenticated and unversioned: a monitor should not carry
+   * credentials, and it should not have to follow an API version bump. It
+   * exposes nothing an attacker can use — no counts, no versions of anything
+   * but our own release.
+   */
   app.get("/health", async (_req, res) => {
+    const startedAt = Date.now();
     try {
       await ping();
-      res.json({ status: "ok", db: config.useFileData ? "file" : "up" });
-    } catch {
-      res.status(503).json({ status: "degraded", db: "down" });
+      res.json({
+        status: "ok",
+        db: config.useFileData ? "file" : "up",
+        dbLatencyMs: Date.now() - startedAt,
+        release: config.sentry.release || "unknown",
+        uptimeSeconds: Math.round(process.uptime()),
+      });
+    } catch (err) {
+      // 503 rather than 500: this is "temporarily unable to serve", which is
+      // what a monitor and a load balancer both need to see to back off.
+      logger.error("health.db_unreachable", { message: err?.message });
+      res.status(503).json({
+        status: "degraded",
+        db: "down",
+        release: config.sentry.release || "unknown",
+      });
     }
   });
   // /health and / stay unversioned: they describe the deployment, not the API
@@ -82,7 +146,29 @@ function createApp({ rateLimit: enableRateLimit = true } = {}) {
   v1.use("/cart", cartRoutes);
   v1.use("/orders", ordersRoutes);
   v1.use("/likes", likesRoutes);
-  if (enableRateLimit) v1.use("/auth", authLimiter);
+  v1.use("/admin", adminRoutes);
+  v1.use("/payments", paymentsRoutes);
+  // Discount checking is a guessing oracle if it is fast and unlimited: try
+  // codes until one works. B10.4 names this directly. The generic message from
+  // lib/discounts.js is the other half of the defence.
+  const discountLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+      error: {
+        message: "Too many code attempts, please try again later.",
+        code: "RATE_LIMITED",
+      },
+    },
+  });
+
+  if (enableRateLimit) {
+    v1.use("/auth", authLimiter);
+    v1.use("/orders/track", trackLimiter);
+    v1.use("/orders/discount", discountLimiter);
+  }
   v1.use("/", authRoutes);
 
   app.use("/api/v1", v1);

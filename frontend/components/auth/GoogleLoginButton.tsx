@@ -15,7 +15,7 @@ import { isAllowedAvatarHost } from "@/lib/avatarHost";
 
 type AuthResponse = {
   success: boolean;
-  token: string;
+  // No `token` — the session arrives as httpOnly cookies the server sets.
   name: string;
   picture?: string;
   userId: string;
@@ -68,7 +68,6 @@ export function GoogleLoginButton() {
     }
     const d = result.data;
     login({
-      token: d.token,
       userId: d.userId,
       name: d.name,
       picture: d.picture ?? "",
@@ -118,8 +117,8 @@ export function GoogleLoginButton() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signInOpen, user]);
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     toast.success("Signed out");
     setMenuOpen(false);
     setTimeout(() => (window.location.href = "/"), 300);

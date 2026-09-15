@@ -62,6 +62,13 @@ const config = [
 
   {
     // Tests legitimately log, and fixtures use loose types.
+    // Build/CI scripts run in Node and report to stdout — that IS their output,
+    // not stray debugging. The no-console rule exists to keep debug logging out
+    // of shipped app code, which these are not.
+    files: ['scripts/**/*.mjs'],
+    rules: { 'no-console': 'off' },
+  },
+  {
     files: ['**/*.test.{ts,tsx}', '**/__tests__/**'],
     rules: {
       'no-console': 'off',

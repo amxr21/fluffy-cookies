@@ -21,10 +21,11 @@ export const QUICK_LINKS: NavLink[] = [
 ];
 
 export const POLICY_LINKS: NavLink[] = [
-  { label: "Privacy Policy", href: "#" },
-  { label: "Pickup & Order Policy", href: "#" },
-  { label: "Event Booking Terms", href: "#" },
-  { label: "Cookie Disclaimer (for allergens etc.)", href: "#" },
+  { label: "Privacy Policy", href: "/privacy-policy" },
+  { label: "Terms & Conditions", href: "/terms" },
+  { label: "Delivery & Pickup", href: "/shipping-policy" },
+  { label: "Returns & Refunds", href: "/returns" },
+  { label: "Allergen Information", href: "/allergens" },
 ];
 
 export const SOCIAL_LINKS: NavLink[] = [
@@ -42,6 +43,16 @@ export const CONTACT = {
   email: "hello@fluffy.ae",
   hours: "Mon–Sat, 10AM – 11PM",
 } as const;
+
+/**
+ * Canonical origin, for sitemap, robots and OG tags.
+ *
+ * Absolute URLs are required in all three — a relative OG image simply does not
+ * render when the page is shared. Set NEXT_PUBLIC_SITE_URL per deployment.
+ */
+export const SITE_URL = (
+  process.env.NEXT_PUBLIC_SITE_URL || "https://fluffy.ae"
+).replace(/\/$/, "");
 
 export const SITE = {
   name: "Fluffy",

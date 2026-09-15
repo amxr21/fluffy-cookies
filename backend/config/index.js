@@ -49,6 +49,40 @@ const config = {
     googleVerifyTimeoutMs: Number(process.env.GOOGLE_VERIFY_TIMEOUT_MS) || 8000,
     jwtSecret: process.env.JWT_SECRET || "",
     jwtExpiresIn: process.env.JWT_EXPIRES_IN || "7d",
+    // Pinned explicitly on both sign and verify. Letting the token's own `alg`
+    // header choose is how "alg: none" forgeries work.
+    jwtAlgorithm: "HS256",
+    jwtIssuer: process.env.JWT_ISSUER || "fluffy-api",
+    jwtAudience: process.env.JWT_AUDIENCE || "fluffy-storefront",
+  },
+
+  payments: {
+    // "stub" until a real provider is configured, so development and CI run
+    // the whole payment path without an account or a real charge.
+    provider: process.env.PAYMENT_PROVIDER || "stub",
+    secretKey: process.env.STRIPE_SECRET_KEY || "",
+    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || "",
+    // How stale a webhook may be before it is refused. Five minutes is
+    // Stripe's own default: long enough for a slow retry, short enough that a
+    // captured request cannot be replayed days later.
+    webhookToleranceSeconds: Number(process.env.WEBHOOK_TOLERANCE_SECONDS) || 300,
+  },
+
+  sentry: {
+    // Unset means tracking is off: development and CI need no account, and no
+    // event can leak from a developer machine.
+    dsn: process.env.SENTRY_DSN || "",
+    // Ties an event to the deploy that produced it. Without it, "when did this
+    // start" is unanswerable.
+    release: process.env.SENTRY_RELEASE || process.env.GIT_SHA || "",
+    tracesSampleRate: Number(process.env.SENTRY_TRACES_SAMPLE_RATE) || 0,
+  },
+
+  email: {
+    // Unset means the console adapter: the whole pipeline runs, nothing is
+    // sent. Lets development and CI exercise email without a vendor account.
+    resendApiKey: process.env.RESEND_API_KEY || "",
+    from: process.env.EMAIL_FROM || "Fluffy <orders@fluffy.ae>",
   },
 
   logging: {
@@ -61,6 +95,9 @@ const config = {
 config.validate = () => {
   const missing = [];
   if (!config.auth.jwtSecret) missing.push("JWT_SECRET");
+  // 32 bytes is the standard's floor. A short secret is brute-forceable
+  // offline from a single captured token, so treat it as a missing one.
+  else if (config.auth.jwtSecret.length < 32) missing.push("JWT_SECRET (must be at least 32 characters)");
   if (!config.auth.googleClientId) missing.push("GOOGLE_CLIENT_ID");
   // DB creds only matter when actually using the DB.
   if (!config.useFileData) {

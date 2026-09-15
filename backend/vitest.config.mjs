@@ -21,7 +21,7 @@ export default defineConfig({
     env: {
       USE_FILE_DATA: 'true',
       LOG_CONSOLE: 'false',
-      JWT_SECRET: 'test-only-secret-never-used-in-production',
+      JWT_SECRET: 'test-only-secret-never-used-in-production-min-32-chars',
       GOOGLE_CLIENT_ID: 'test-only.apps.googleusercontent.com',
     },
     include: ['**/*.{test,spec}.js'],

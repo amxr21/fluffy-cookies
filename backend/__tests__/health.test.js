@@ -81,6 +81,7 @@ describe("public endpoints stay public", () => {
     const res = await request(app).get("/api/v1/products");
 
     expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
+    // Paginated envelope, not a bare array — see lib/pagination.js.
+    expect(Array.isArray(res.body.data)).toBe(true);
   });
 });

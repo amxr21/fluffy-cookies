@@ -5,6 +5,26 @@
 /*  Use as: text-navy, bg-beige, font-display, text-h1, text-body...  */
 /* ------------------------------------------------------------------ */
 @theme {
+  /* ---- Semantic roles ----
+     Components should use THESE (bg-surface, text-content, border-line), not
+     the raw brand colours below.
+
+     The distinction is what makes dark mode a stylesheet change rather than a
+     rewrite: `bg-beige` hardcodes a decision that a dark theme has to undo in
+     every file that made it, while `bg-surface` is a decision made once, here.
+
+     Each maps to a raw colour via a --role-* variable, redefined under
+     prefers-color-scheme below. Adding a token here costs nothing; retrofitting
+     one across sixty components costs a week. */
+  --color-surface: var(--role-surface);
+  --color-surface-raised: var(--role-surface-raised);
+  --color-surface-sunk: var(--role-surface-sunk);
+  --color-content: var(--role-content);
+  --color-content-muted: var(--role-content-muted);
+  --color-accent: var(--role-accent);
+  --color-accent-contrast: var(--role-accent-contrast);
+  --color-line: var(--role-line);
+
   /* Brand palette (from fluffy-assets/colors.json) */
   --color-navy: #2f468e;   /* primary — headings, buttons, links */
   --color-beige: #fcefd6;  /* warm section backgrounds */
@@ -34,6 +54,56 @@
   --text-small--line-height: 1.6;
   --text-caption: 0.75rem;
   --text-caption--line-height: 1.5;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Theme role values                                                  */
+/*                                                                     */
+/*  Light is the default and lives on bare :root, so a browser with no  */
+/*  preference still gets a complete palette. Dark redefines ONLY these */
+/*  variables — no component CSS is duplicated.                         */
+/*                                                                     */
+/*  Dark mode is not shipped as a toggle yet. The point of defining it   */
+/*  now is that turning it on later is a decision, not a refactor.       */
+/* ------------------------------------------------------------------ */
+:root {
+  --role-surface: #fefaf0;
+  --role-surface-raised: #ffffff;
+  --role-surface-sunk: #fcefd6;
+  --role-content: #090d1b;
+  --role-content-muted: #5d3f28;
+  --role-accent: #2f468e;
+  --role-accent-contrast: #ffffff;
+  --role-line: rgb(47 70 142 / 0.15);
+}
+
+@media (prefers-color-scheme: dark) {
+  /* Guarded so an explicit light choice beats a dark OS setting. */
+  :root:not([data-theme="light"]) {
+    /* Deliberately not an inversion: the navy is lifted to stay legible on a
+       dark ground, and the warm neutrals keep a hint of the brand's warmth
+       rather than going flat grey. */
+    --role-surface: #16151a;
+    --role-surface-raised: #1e1d23;
+    --role-surface-sunk: #26242c;
+    --role-content: #f0ece4;
+    --role-content-muted: #b3aa9b;
+    --role-accent: #91a6e6;
+    --role-accent-contrast: #16151a;
+    --role-line: rgb(145 166 230 / 0.22);
+  }
+}
+
+/* An explicit choice wins in both directions, for a future toggle. */
+:root[data-theme="dark"] {
+  --role-surface: #16151a;
+  --role-surface-raised: #1e1d23;
+  --role-surface-sunk: #26242c;
+  --role-content: #f0ece4;
+  --role-content-muted: #b3aa9b;
+  --role-accent: #91a6e6;
+  --role-accent-contrast: #16151a;
+  --role-line: rgb(145 166 230 / 0.22);
 }
 
 /* Base element defaults so plain markup already looks "Fluffy" */

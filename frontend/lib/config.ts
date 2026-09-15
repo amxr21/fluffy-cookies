@@ -4,35 +4,37 @@
 /** Version prefix every API route lives under (backend/app.js mounts it). */
 export const API_VERSION = "v1";
 
-// Accept either name; the project standard's Vercel env uses _API_BASE_URL,
-// earlier frontend code used _API_URL. Either works.
-const RAW_API_URL = (
-  process.env.NEXT_PUBLIC_API_BASE_URL ||
-  process.env.NEXT_PUBLIC_API_URL ||
-  ""
-).replace(/\/$/, "");
-
 /**
- * Base for every API call, version included — so call sites stay written as
- * `/cart` and `/orders` rather than repeating the prefix 20 times and getting
- * one of them wrong.
+ * Base for every API call.
  *
- * The env var may or may not already carry the prefix (deployments configured
- * before versioning existed do not; CI's value does), so append it only when
- * it is absent rather than trusting either convention.
+ * Relative by default: next.config.ts rewrites /api/v1/* to the backend, so the
+ * browser talks to this origin only. That is what lets auth cookies stay
+ * SameSite=Lax — see the CSRF note in that file.
+ *
+ * NEXT_PUBLIC_API_URL still works as an override for a deploy that genuinely
+ * needs to call the API cross-origin, but that combination also needs a CSRF
+ * token layer, so it is not the default.
  */
+const RAW_API_URL = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
+
 export const API_URL = RAW_API_URL
   ? RAW_API_URL.endsWith(`/api/${API_VERSION}`)
     ? RAW_API_URL
     : `${RAW_API_URL}/api/${API_VERSION}`
-  : "";
+  : `/api/${API_VERSION}`;
 
 export const GOOGLE_CLIENT_ID =
   process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
 
-/** localStorage keys for the lazy-auth session (see AuthContext). */
+/**
+ * localStorage keys for the lazy-auth session (see AuthContext).
+ *
+ * NOTE: `token` is gone. Auth tokens are httpOnly cookies now, unreadable by
+ * script — that is the point. What remains is display data only (who is signed
+ * in, for the account menu); none of it is trusted by the server, which reads
+ * identity from the cookie.
+ */
 export const AUTH_KEYS = {
-  token: "fluffy_token",
   userId: "fluffy_user_id",
   userRole: "fluffy_user_role",
   userName: "fluffy_user_name",

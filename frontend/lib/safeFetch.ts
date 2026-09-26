@@ -1,4 +1,4 @@
-import { API_URL } from "@/lib/config";
+import { API_URL, DASHBOARD_API_URL } from "@/lib/config";
 import { reportClientError } from "@/lib/clientLogger";
 
 /**
@@ -93,7 +93,7 @@ export async function safeFetch<T = unknown>(
     // The access token is short-lived by design, so a 401 mid-session is the
     // expected path, not an error: refresh once and replay the request. Skipped
     // for the refresh call itself, which would otherwise recurse.
-    if (res.status === 401 && !path.startsWith("/auth/refresh") && !options.__retried) {
+    if (res.status === 401 && baseUrl !== DASHBOARD_API_URL && !path.startsWith("/auth/refresh") && !options.__retried) {
       const refreshed = await refreshSession();
       if (refreshed) {
         return safeFetch<T>(path, { ...options, __retried: true });

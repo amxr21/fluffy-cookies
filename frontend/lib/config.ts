@@ -4,6 +4,10 @@
 /** Version prefix every API route lives under (backend/app.js mounts it). */
 export const API_VERSION = "v1";
 
+/** Select the dashboard's public commerce contract at build time. */
+export const DASHBOARD_MODE = process.env.NEXT_PUBLIC_DATA_SOURCE === "admin-dashboard";
+export const DASHBOARD_API_URL = "/api/storefront";
+
 /**
  * Base for every API call.
  *

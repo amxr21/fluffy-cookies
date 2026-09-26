@@ -9,6 +9,8 @@ import { OrderCard } from "@/components/order/OrderCard";
 import { useAuth } from "@/context/AuthContext";
 import { getJSON, type Paginated } from "@/lib/safeFetch";
 import type { Order } from "@/lib/orders";
+import { DASHBOARD_MODE } from "@/lib/config";
+import { dashboardGet, dashboardOrderToOrder, type DashboardOrder } from "@/lib/dashboard";
 
 export default function MyOrdersPage() {
   const { user } = useAuth();
@@ -18,12 +20,19 @@ export default function MyOrdersPage() {
   >("loading");
 
   useEffect(() => {
-    if (!user) {
-      setState("ready");
-      return;
-    }
+    // Signed out renders the sign-in prompt before `state` is read.
+    if (!user) return;
     let active = true;
     (async () => {
+      if (DASHBOARD_MODE) {
+        const res = await dashboardGet<DashboardOrder[]>("/orders");
+        if (!active) return;
+        if (res.ok) {
+          try { setOrders(res.data.map(dashboardOrderToOrder)); setState("ready"); }
+          catch { setState("error"); }
+        } else setState("error");
+        return;
+      }
       const res = await getJSON<Paginated<Order>>(`/orders/user/${user.userId}`);
       if (!active) return;
       if (res.ok && Array.isArray(res.data?.data)) {

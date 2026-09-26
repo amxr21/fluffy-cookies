@@ -26,7 +26,9 @@ const isDev = process.env.NODE_ENV !== "production";
 const CSP = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""} https://accounts.google.com https://apis.google.com`,
-  "style-src 'self' 'unsafe-inline'",
+  // GSI's client script injects a <link> to its own stylesheet to style the
+  // rendered sign-in button; without this host the button loads unstyled.
+  "style-src 'self' 'unsafe-inline' https://accounts.google.com",
   "img-src 'self' data: blob: https://lh3.googleusercontent.com",
   "font-src 'self' data:",
   // The API is same-origin via the rewrite in this file, so no API host here.
@@ -69,6 +71,7 @@ const nextConfig: NextConfig = {
    * API origin is not advertised in the client bundle.
    */
   async rewrites() {
+    if (process.env.NEXT_PUBLIC_DATA_SOURCE === "admin-dashboard") return [];
     const target = (process.env.API_ORIGIN || "http://localhost:4000").replace(/\/$/, "");
     return [{ source: "/api/v1/:path*", destination: `${target}/api/v1/:path*` }];
   },

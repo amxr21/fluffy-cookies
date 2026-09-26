@@ -9,6 +9,9 @@ import { Container } from "@/components/ui/Container";
 import { getMenu } from "@/lib/catalogue";
 import { formatMinor } from "@/lib/money";
 import { SITE_URL } from "@/lib/site";
+import { DASHBOARD_MODE } from "@/lib/config";
+
+export const dynamic = "force-dynamic";
 
 /** Find one item across every category. */
 async function findItem(slug: string) {
@@ -70,6 +73,7 @@ export default async function ProductPage({
             <Image
               src={item.image}
               alt={item.name}
+              unoptimized={item.image.startsWith("http")}
               fill
               priority
               sizes="(max-width: 768px) 100vw, 50vw"
@@ -83,6 +87,7 @@ export default async function ProductPage({
             <p className="mt-6 text-h3 font-bold text-navy">
               {formatMinor(item.priceMinor)}
             </p>
+            {DASHBOARD_MODE && <p className="text-small text-navy/60">VAT is added at checkout.</p>}
 
             {/* Interactive part only — the rest of the page stays server-rendered
                 so it is indexable and ships as HTML. */}

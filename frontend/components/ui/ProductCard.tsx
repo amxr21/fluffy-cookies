@@ -11,13 +11,14 @@ export function ProductCard({ item }: { item: CollectionItem }) {
   return (
     <article className="group h-full">
       <Link
-        href="/menu"
+        href={item.href ?? "/menu"}
         className="flex h-full flex-col items-center rounded-3xl border border-navy/15 bg-white/40 px-6 py-8 text-center transition-all duration-300 hover:-translate-y-1 hover:border-navy/30 hover:shadow-xl hover:shadow-navy/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy motion-reduce:transform-none"
       >
         <div className="product-depth relative flex h-48 items-center justify-center">
           <Image
             src={item.image}
             alt={item.name}
+            unoptimized={item.image.startsWith("http")}
             width={240}
             height={240}
             sizes="(max-width: 640px) 80vw, (max-width: 1024px) 40vw, 22vw"

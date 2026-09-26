@@ -10,8 +10,10 @@ import {
 } from "react";
 
 import { useToast } from "@/components/providers/ToastProvider";
-import { AUTH_KEYS } from "@/lib/config";
+import { AUTH_KEYS, DASHBOARD_MODE } from "@/lib/config";
 import { getJSON, postJSON, patchJSON, deleteJSON } from "@/lib/safeFetch";
+import { dashboardCartToLines, dashboardDelete, dashboardGet, dashboardPatch, dashboardPost, type DashboardCart } from "@/lib/dashboard";
+import { useAuth } from "@/context/AuthContext";
 import type { CartLine } from "@/lib/cart";
 import { MENU } from "@/lib/menu";
 import { lineTotalMinor, sumMinor } from "@/lib/money";
@@ -60,6 +62,7 @@ function migrateGuestLines(raw: unknown): CartLine[] {
     if (!line || typeof line !== "object") return [];
     const l = line as Partial<CartLine>;
     if (typeof l.id !== "string") return [];
+    if (DASHBOARD_MODE) return typeof l.productId === "string" ? [l as CartLine] : [];
     if (typeof l.productId === "number") return [l as CartLine];
 
     const match = MENU.flatMap((c) => c.items).find((i) => i.id === l.id);
@@ -68,10 +71,11 @@ function migrateGuestLines(raw: unknown): CartLine[] {
 }
 
 const getUserId = () =>
-  typeof window !== "undefined" ? localStorage.getItem(AUTH_KEYS.userId) : null;
+  !DASHBOARD_MODE && typeof window !== "undefined" ? localStorage.getItem(AUTH_KEYS.userId) : null;
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const toast = useToast();
+  const { user, hydrated: authHydrated } = useAuth();
   const [lines, setLines] = useState<CartLine[]>([]);
   const [hydrated, setHydrated] = useState(false);
 
@@ -85,10 +89,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   // hydrate: from API if signed in, else localStorage
   useEffect(() => {
-    const userId = getUserId();
+    if (DASHBOARD_MODE && !authHydrated) return;
+    const userId = DASHBOARD_MODE ? user?.userId : getUserId();
     if (!userId) {
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
+        // Guest cart is in localStorage, readable only after mount.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         if (raw) setLines(migrateGuestLines(JSON.parse(raw)));
       } catch {
         /* ignore */
@@ -98,6 +105,16 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     }
     let active = true;
     (async () => {
+      if (DASHBOARD_MODE) {
+        const res = await dashboardGet<DashboardCart>("/cart");
+        if (!active) return;
+        if (res.ok) {
+          try { setLines(dashboardCartToLines(res.data)); }
+          catch { toast.error("Couldn't read your cart."); }
+        } else toast.error(res.error.message);
+        setHydrated(true);
+        return;
+      }
       const res = await getJSON<CartLine[]>(`/cart/${userId}`);
       if (!active) return;
       if (res.ok && Array.isArray(res.data)) setLines(res.data);
@@ -106,12 +123,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     return () => {
       active = false;
     };
-  }, []);
+  }, [user?.userId, authHydrated, toast]);
 
   const addToCart = useCallback(
     async (item: AddToCartInput): Promise<boolean> => {
       const qty = item.quantity ?? 1;
-      const userId = getUserId();
+      const userId = DASHBOARD_MODE ? user?.userId : getUserId();
 
       // guest: local-only cart
       if (!userId) {
@@ -129,6 +146,18 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           title: "🛒 In your cart",
           action: { label: "Check Cart", href: "/cart" },
         });
+        return true;
+      }
+
+      if (DASHBOARD_MODE) {
+        const res = await dashboardPost<DashboardCart>("/cart", { productId: String(item.productId), quantity: qty });
+        if (!res.ok) {
+          toast.error(res.error.message || "Couldn't add the item");
+          return false;
+        }
+        try { setLines(dashboardCartToLines(res.data)); }
+        catch { toast.error("Couldn't read your updated cart."); return false; }
+        toast.success("Added to your cart", { title: "In your cart", action: { label: "Check Cart", href: "/cart" } });
         return true;
       }
 
@@ -156,15 +185,25 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       });
       return true;
     },
-    [persistGuest, toast]
+    [persistGuest, toast, user?.userId]
   );
 
   const setQuantity = useCallback(
     async (id: string, quantity: number) => {
       const q = Math.max(0, quantity);
+      if (DASHBOARD_MODE && user) {
+        const productId = lines.find((line) => line.id === id)?.productId;
+        if (productId === undefined) return;
+        const res = await dashboardPatch<DashboardCart>("/cart", { productId: String(productId), quantity: q });
+        if (res.ok) {
+          try { setLines(dashboardCartToLines(res.data)); }
+          catch { toast.error("Couldn't read your updated cart."); }
+        } else toast.error(res.error.message);
+        return;
+      }
       // Callers address lines by slug; the API needs the numeric product id,
       // so capture it from the line before the state update drops it.
-      let productId: number | undefined;
+      let productId: string | number | undefined;
       setLines((prev) => {
         productId = prev.find((l) => l.id === id)?.productId;
         const next =
@@ -183,12 +222,22 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         });
       }
     },
-    [persistGuest]
+    [persistGuest, user, lines, toast]
   );
 
   const removeFromCart = useCallback(
     async (id: string) => {
-      let productId: number | undefined;
+      if (DASHBOARD_MODE && user) {
+        const productId = lines.find((line) => line.id === id)?.productId;
+        if (productId === undefined) return;
+        const res = await dashboardDelete<DashboardCart>("/cart", { productId: String(productId) });
+        if (res.ok) {
+          try { setLines(dashboardCartToLines(res.data)); }
+          catch { toast.error("Couldn't read your updated cart."); }
+        } else toast.error(res.error.message);
+        return;
+      }
+      let productId: string | number | undefined;
       setLines((prev) => {
         productId = prev.find((l) => l.id === id)?.productId;
         const next = prev.filter((l) => l.id !== id);
@@ -200,7 +249,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         await deleteJSON("/cart", { user_id: userId, product_id: productId });
       }
     },
-    [persistGuest]
+    [persistGuest, user, lines, toast]
   );
 
   const clearCart = useCallback(() => {

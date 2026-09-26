@@ -12,7 +12,7 @@ export function OrderCard({ order }: { order: Order }) {
       </div>
 
       <p className="mt-1 text-caption text-navy/50">
-        {new Date(order.createdAt).toLocaleDateString()} · {order.fulfillment}
+        {new Date(order.createdAt).toLocaleDateString()}{order.fulfillment ? ` · ${order.fulfillment}` : ""}
       </p>
 
       <ul className="mt-3 space-y-1 text-small text-navy/80">

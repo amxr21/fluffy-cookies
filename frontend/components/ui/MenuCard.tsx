@@ -48,6 +48,7 @@ export function MenuCard({ item }: { item: MenuItem }) {
           <Image
             src={item.image}
             alt={item.name}
+            unoptimized={item.image.startsWith("http")}
           fill
             className="object-cover transition-transform duration-500 group-hover:scale-105"
           />
@@ -62,8 +63,8 @@ export function MenuCard({ item }: { item: MenuItem }) {
         </h3>
         <p className="mt-1 flex-1 text-caption italic text-navy/60">{item.description}</p>
 
-        <Button fullWidth onClick={handleOrder} className="mt-4">
-          Order for Pickup/ Delivery
+        <Button fullWidth onClick={handleOrder} disabled={item.inStock === false} className="mt-4">
+          {item.inStock === false ? "Sold out" : "Order for Pickup/ Delivery"}
         </Button>
       </div>
     </article>

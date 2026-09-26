@@ -5,8 +5,19 @@ import { Container } from "@/components/ui/Container";
 import { ProductCard } from "@/components/ui/ProductCard";
 import { Reveal } from "@/components/ui/Reveal";
 import { COLLECTION } from "@/lib/products";
+import { DASHBOARD_MODE } from "@/lib/config";
+import { getMenu } from "@/lib/catalogue";
 
-export function DiscoverSection() {
+export async function DiscoverSection() {
+  const featured = DASHBOARD_MODE
+    ? (await getMenu()).categories.flatMap((category) => category.items).slice(0, 4).map((item) => ({
+        id: item.id,
+        name: item.name,
+        description: item.description,
+        image: item.image,
+        href: `/menu/${item.id}`,
+      }))
+    : COLLECTION;
   return (
     <section>
       <Container className="py-16 md:px-32 md:py-24">
@@ -35,7 +46,7 @@ export function DiscoverSection() {
           stagger
           className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-4"
         >
-          {COLLECTION.map((item) => (
+          {featured.map((item) => (
             <ProductCard key={item.id} item={item} />
           ))}
         </Reveal>

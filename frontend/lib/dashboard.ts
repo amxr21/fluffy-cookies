@@ -125,8 +125,8 @@ async function unwrap<T>(pending: Promise<FetchResult<{ data: T }>>): Promise<Fe
 
 export const dashboardGet = <T>(path: string) =>
   unwrap<T>(getJSON<{ data: T }>(path, { baseUrl: DASHBOARD_API_URL }));
-export const dashboardPost = <T>(path: string, body: unknown) =>
-  unwrap<T>(postJSON<{ data: T }>(path, body, { baseUrl: DASHBOARD_API_URL }));
+export const dashboardPost = <T>(path: string, body: unknown, headers?: HeadersInit) =>
+  unwrap<T>(postJSON<{ data: T }>(path, body, { baseUrl: DASHBOARD_API_URL, headers }));
 export const dashboardPatch = <T>(path: string, body: unknown) =>
   unwrap<T>(patchJSON<{ data: T }>(path, body, { baseUrl: DASHBOARD_API_URL }));
 export const dashboardDelete = <T>(path: string, body: unknown) =>

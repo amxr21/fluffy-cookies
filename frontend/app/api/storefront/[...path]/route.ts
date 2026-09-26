@@ -74,6 +74,9 @@ async function handler(
   const language = request.headers.get("accept-language");
   if (language) headers.set("accept-language", language);
   if (request.method !== "GET") headers.set("content-type", "application/json");
+  // Checkout is retry-safe only if the browser's key reaches the dashboard.
+  const idempotencyKey = request.headers.get("idempotency-key");
+  if (isCheckout && idempotencyKey) headers.set("idempotency-key", idempotencyKey);
   const token = request.cookies.get(COOKIE)?.value;
   if (token && path !== "auth/google") headers.set("authorization", `Bearer ${token}`);
 

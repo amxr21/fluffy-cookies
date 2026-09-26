@@ -210,6 +210,12 @@ export default function CheckoutPage() {
     setErrors({});
 
     setSubmitting(true);
+
+    // Generated once per attempt and reused across retries of that attempt.
+    if (!idempotencyKey.current) {
+      idempotencyKey.current = crypto.randomUUID();
+    }
+
     if (DASHBOARD_MODE) {
       const res = await dashboardPost<{ orderNumber: string; total: string }>("/orders", {
         items: lines.map((line) => ({ productId: String(line.productId), quantity: line.quantity })),
@@ -225,12 +231,13 @@ export default function CheckoutPage() {
         },
         paymentMethod: payment,
         fulfillment,
-      });
+      }, { "Idempotency-Key": idempotencyKey.current });
       setSubmitting(false);
       if (!res.ok) {
         toast.error(res.error.message || "Couldn't place your order");
         return;
       }
+      idempotencyKey.current = null;
       clearCart();
       router.push(`/order-success?order=${encodeURIComponent(res.data.orderNumber)}`);
       return;
@@ -239,11 +246,6 @@ export default function CheckoutPage() {
       typeof window !== "undefined"
         ? localStorage.getItem(AUTH_KEYS.userId)
         : null;
-
-    // Generated once per attempt and reused across retries of that attempt.
-    if (!idempotencyKey.current) {
-      idempotencyKey.current = crypto.randomUUID();
-    }
 
     const res = await postJSON<{ orderNumber: string }>(
       "/orders",

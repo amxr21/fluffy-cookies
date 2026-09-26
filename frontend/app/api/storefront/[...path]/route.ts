@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { dashboardServerConfig } from "@/lib/dashboardServer";
+import { dashboardBranchId, dashboardServerConfig } from "@/lib/dashboardServer";
 
 const COOKIE = "fluffy_customer_session";
 const METHODS = ["GET", "POST", "PATCH", "DELETE"];
@@ -42,6 +42,32 @@ async function handler(
 
   const remote = new URL(`${config.origin}/api/v1/public/${path}`);
   remote.search = request.nextUrl.search;
+
+  // Catalogue reads and checkout are per branch in the dashboard. The browser
+  // never picks one; the server fills it in, the same way getMenu() does.
+  const isCatalogueRead = request.method === "GET" && /^products(\/|$)/.test(path);
+  const isCheckout = request.method === "POST" && path === "orders";
+  let requestBody = request.method === "GET" ? undefined : await request.text();
+  if (isCatalogueRead || isCheckout) {
+    const branchId = await dashboardBranchId(config);
+    if (!branchId) {
+      return NextResponse.json(
+        { error: { code: "CONFIG_ERROR", message: "Store branch is not configured" } },
+        { status: 503 }
+      );
+    }
+    if (isCatalogueRead) remote.searchParams.set("branchId", branchId);
+    if (isCheckout) {
+      try {
+        requestBody = JSON.stringify({ ...(JSON.parse(requestBody || "{}") as object), branchId });
+      } catch {
+        return NextResponse.json(
+          { error: { code: "BAD_REQUEST", message: "Invalid request body" } },
+          { status: 400 }
+        );
+      }
+    }
+  }
   const headers = new Headers();
   headers.set("accept", "application/json");
   headers.set("x-api-key", config.apiKey);
@@ -55,7 +81,7 @@ async function handler(
     const upstream = await fetch(remote, {
       method: request.method,
       headers,
-      body: request.method === "GET" ? undefined : await request.text(),
+      body: requestBody,
       cache: "no-store",
       signal: AbortSignal.timeout(15000),
     });

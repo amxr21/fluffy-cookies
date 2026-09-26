@@ -1,7 +1,7 @@
 import { API_URL, DASHBOARD_MODE } from "@/lib/config";
 import { MENU, type MenuCategory, type MenuItem } from "@/lib/menu";
 import { dashboardMenuToCategories, type DashboardMenuCategory } from "@/lib/dashboard";
-import { dashboardServerConfig } from "@/lib/dashboardServer";
+import { dashboardBranchId, dashboardServerConfig } from "@/lib/dashboardServer";
 
 /**
  * The menu, from the API, with the static list as a fallback.
@@ -105,7 +105,11 @@ export async function getMenu(): Promise<{ categories: MenuCategory[]; live: boo
     const config = dashboardServerConfig();
     if (!config) return { categories: [], live: false };
     try {
-      const response = await fetch(`${config.origin}/api/v1/public/products/menu`, {
+      const branchId = await dashboardBranchId(config);
+      if (!branchId) return { categories: [], live: false };
+      const url = new URL(`${config.origin}/api/v1/public/products/menu`);
+      url.searchParams.set("branchId", branchId);
+      const response = await fetch(url, {
         headers: { "x-api-key": config.apiKey },
         next: { revalidate: 60 },
       });

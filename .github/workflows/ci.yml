@@ -225,6 +225,33 @@ jobs:
           LOG_CONSOLE: 'false'
         run: pnpm --filter ./backend seed
 
+  frontend-budget:
+    name: Frontend · Bundle budget
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build
+        env:
+          NEXT_PUBLIC_GOOGLE_CLIENT_ID: ci-dummy.apps.googleusercontent.com
+        run: pnpm --filter ./frontend build
+
+      - name: Check the shared JS budget
+        # A JS budget is only a budget if something fails when it is exceeded.
+        # This checks the shared chunks every route pays for, which is the
+        # number that actually governs LCP on a mid-tier phone over 4G.
+        #
+        # Raising the limit is a decision to make on a pull request, with the
+        # reason in the diff — not something that drifts up unnoticed.
+        run: node frontend/scripts/check-bundle-budget.mjs
+
   # ─── Aggregate gate ──────────────────────────────────────────────
   #
   # This is the ONE check to mark as required in branch protection. Adding a
@@ -243,6 +270,7 @@ jobs:
       - backend-lint
       - backend-test
       - backend-migrations
+      - frontend-budget
     # `always()` so this still runs when a dependency failed — otherwise it
     # would be skipped, and a skipped required check blocks the PR forever.
     if: always()

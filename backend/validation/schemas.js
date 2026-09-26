@@ -31,8 +31,16 @@ const orderSchema = z.object({
     .object({
       name: z.string().optional(),
       phone: z.string().optional(),
+      // Optional: a customer collecting in person may not want to give one,
+      // and the order must still be placeable. No email simply means no
+      // confirmation — see email/mailer.js.
+      email: z.string().email().max(254).optional(),
       address: z.string().optional(),
+      // GCC addressing: emirate -> city -> area -> building. There is no
+      // postcode, so `emirate` is what the delivery zone is resolved from.
+      emirate: z.string().max(64).optional(),
       city: z.string().optional(),
+      area: z.string().max(120).optional(),
       note: z.string().optional(),
     })
     .optional(),
@@ -48,6 +56,35 @@ const orderStatusSchema = z.object({
   note: z.string().max(500).optional(),
 });
 
+const productIdParam = z.object({ productId: id });
+
+const createIntentSchema = z.object({
+  orderNumber: z.string().min(2).max(40),
+});
+
+const refundSchema = z.object({
+  // Omitted means "refund what remains" — the controller computes it, so the
+  // client cannot name an amount larger than was paid.
+  amountMinor: z.coerce.number().int().positive().optional(),
+  reason: z.string().max(255).optional(),
+});
+
+const discountCheckSchema = z.object({
+  code: z.string().min(1).max(32),
+  subtotal_minor: z.coerce.number().int().min(0),
+});
+
+const stockSchema = z
+  .object({
+    onHand: z.coerce.number().int().min(0).max(1000000).optional(),
+    trackStock: z.coerce.boolean().optional(),
+    lowStockThreshold: z.coerce.number().int().min(0).max(10000).optional(),
+  })
+  // An empty body would silently do nothing and report success.
+  .refine((v) => Object.keys(v).length > 0, {
+    message: "Provide at least one of onHand, trackStock or lowStockThreshold",
+  });
+
 const orderNumberParam = z.object({
   orderNumber: z.string().min(2).max(40),
 });
@@ -62,4 +99,9 @@ module.exports = {
   orderSchema,
   orderNumberParam,
   orderStatusSchema,
+  productIdParam,
+  stockSchema,
+  discountCheckSchema,
+  createIntentSchema,
+  refundSchema,
 };

@@ -3,6 +3,9 @@ const logger = require("./logger");
 const createApp = require("./app");
 
 // Fail fast on missing critical configuration.
+// Before anything else, so a crash during startup is still reported.
+require("./lib/errorTracker").init();
+
 const missing = config.validate();
 if (missing.length) {
   logger.error("Missing required environment variables", { missing });

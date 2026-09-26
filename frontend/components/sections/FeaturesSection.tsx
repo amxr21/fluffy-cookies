@@ -18,7 +18,7 @@ const FEATURES: Feature[] = [
     description:
       "Order your favorite drinks, ready for quick pickup. Freshly brewed, sweet, and made to match your moment.",
     icon: "/icons/cup.svg",
-    bg: "/images/banner/Frame 15.jpg",
+    bg: "/images/banner/1.jpg",
     align: "left",
   },
   {

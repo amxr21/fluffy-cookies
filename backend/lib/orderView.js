@@ -36,6 +36,7 @@ function toPublicOrder(order) {
     status: order.status,
     fulfillment: order.fulfillment,
     totalMinor: order.totalMinor ?? order.total_minor,
+    shippingMinor: order.shipping_minor ?? order.shippingMinor ?? 0,
     currency: order.currency,
     createdAt: order.createdAt,
     items: publicItems(order.items),
@@ -58,8 +59,11 @@ function toOwnerOrder(order) {
     contact: {
       name: contact.name,
       phone: contact.phone,
+      email: contact.email,
       address: contact.address,
+      emirate: contact.emirate,
       city: contact.city,
+      area: contact.area,
       note: contact.note,
     },
   };

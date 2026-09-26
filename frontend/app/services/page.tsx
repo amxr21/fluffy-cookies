@@ -2,6 +2,12 @@ import { PageHeader, ServiceRow, SpecialCTABanner } from "@/components/sections"
 import { Container } from "@/components/ui/Container";
 import { SERVICES } from "@/lib/services";
 
+export const metadata = {
+  title: "Services",
+  description:
+    "Cookie and coffee delivery, event booths, and pickup orders from Fluffy in Al Ain.",
+};
+
 export default function ServicesPage() {
   return (
     <main className="flex-1">

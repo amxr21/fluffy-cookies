@@ -9,6 +9,8 @@ const repo = require("../repo");
 const { notFound, conflict } = require("../errors/AppError");
 const { assertTransition, allowedNext } = require("../lib/orderStatus");
 const { toOwnerOrder } = require("../lib/orderView");
+const mailer = require("../email/mailer");
+const { readPageParams, paginated, slice } = require("../lib/pagination");
 
 /**
  * Move an order to a new status.
@@ -43,6 +45,18 @@ const setOrderStatus = async (req, res) => {
     );
   }
 
+  // Tell the customer, when the new state is one they care about.
+  const notify = { ready: "orderReady", cancelled: "orderCancelled" }[result.to];
+  if (notify) {
+    const full = await repo.getOrderByNumber(orderNumber);
+    void mailer
+      .send(notify, full?.contact?.email, {
+        orderNumber,
+        fulfillment: full?.fulfillment,
+      })
+      .catch(() => {});
+  }
+
   res.json({
     orderNumber,
     status: result.to,
@@ -68,4 +82,37 @@ const getOrder = async (req, res) => {
   });
 };
 
-module.exports = { setOrderStatus, getOrder };
+/** Stock levels for every product, with low-stock flagged for the dashboard. */
+const listStock = async (req, res) => {
+  const { limit, offset } = readPageParams(req.query);
+  const all = (await repo.listStock()).map((row) => ({
+    ...row,
+    lowStock: row.trackStock && row.available <= row.lowStockThreshold,
+  }));
+  res.json(paginated(slice(all, { limit, offset }), { limit, offset, total: all.length }));
+};
+
+/**
+ * Set a counted stock level.
+ *
+ * Deliberately absolute, not a delta: an operator counting a shelf knows how
+ * many are there, not how many have changed since they last looked. The ledger
+ * records the difference.
+ */
+const setStock = async (req, res) => {
+  const { productId } = req.params;
+  const { onHand, trackStock, lowStockThreshold } = req.body;
+
+  const result = await repo.setStock({
+    productId,
+    onHand,
+    trackStock,
+    lowStockThreshold,
+    actorId: req.user.id,
+  });
+  if (!result) throw notFound("Product not found");
+
+  res.json(await repo.getStock(productId));
+};
+
+module.exports = { setOrderStatus, getOrder, listStock, setStock };

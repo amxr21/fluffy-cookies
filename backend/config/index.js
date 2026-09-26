@@ -56,6 +56,35 @@ const config = {
     jwtAudience: process.env.JWT_AUDIENCE || "fluffy-storefront",
   },
 
+  payments: {
+    // "stub" until a real provider is configured, so development and CI run
+    // the whole payment path without an account or a real charge.
+    provider: process.env.PAYMENT_PROVIDER || "stub",
+    secretKey: process.env.STRIPE_SECRET_KEY || "",
+    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || "",
+    // How stale a webhook may be before it is refused. Five minutes is
+    // Stripe's own default: long enough for a slow retry, short enough that a
+    // captured request cannot be replayed days later.
+    webhookToleranceSeconds: Number(process.env.WEBHOOK_TOLERANCE_SECONDS) || 300,
+  },
+
+  sentry: {
+    // Unset means tracking is off: development and CI need no account, and no
+    // event can leak from a developer machine.
+    dsn: process.env.SENTRY_DSN || "",
+    // Ties an event to the deploy that produced it. Without it, "when did this
+    // start" is unanswerable.
+    release: process.env.SENTRY_RELEASE || process.env.GIT_SHA || "",
+    tracesSampleRate: Number(process.env.SENTRY_TRACES_SAMPLE_RATE) || 0,
+  },
+
+  email: {
+    // Unset means the console adapter: the whole pipeline runs, nothing is
+    // sent. Lets development and CI exercise email without a vendor account.
+    resendApiKey: process.env.RESEND_API_KEY || "",
+    from: process.env.EMAIL_FROM || "Fluffy <orders@fluffy.ae>",
+  },
+
   logging: {
     level: process.env.LOG_LEVEL || (env === "production" ? "info" : "debug"),
     console: bool(process.env.LOG_CONSOLE, env !== "production"),

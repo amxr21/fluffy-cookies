@@ -39,7 +39,7 @@ export function HeroSection() {
         aria-hidden
         width={320}
         height={320}
-        className="pointer-events-none invisible absolute -left-40 top-0 hidden w-32 md:block md:w-36 lg:w-80"
+        className="pointer-events-none invisible absolute -left-40 top-0 hidden h-auto w-32 md:block md:w-36 lg:w-80"
       />
       <Image
         data-hero="edge"
@@ -48,7 +48,7 @@ export function HeroSection() {
         aria-hidden
         width={320}
         height={320}
-        className="pointer-events-none invisible absolute -right-4 top-40 hidden w-32 md:block md:w-36 lg:w-40"
+        className="pointer-events-none invisible absolute -right-4 top-40 hidden h-auto w-32 md:block md:w-36 lg:w-40"
       />
 
       <Container className="relative flex min-h-[88vh] flex-col items-center justify-center py-20 text-center">
@@ -83,7 +83,7 @@ export function HeroSection() {
                 height={620}
                 priority
                 sizes="(max-width: 640px) 80vw, 40vw"
-                className="w-[clamp(18rem,40vw,30rem)] will-change-transform"
+                className="h-auto w-[clamp(18rem,40vw,30rem)] will-change-transform"
               />
             </span>
             <Image
@@ -93,7 +93,7 @@ export function HeroSection() {
               aria-hidden
               width={120}
               height={120}
-              className="invisible absolute -left-6 top-1/2 z-[2] w-16 sm:-left-14 sm:w-20 md:w-30"
+              className="invisible absolute -left-6 top-1/2 z-[2] h-auto w-16 sm:-left-14 sm:w-20 md:w-30"
             />
           </span>
 

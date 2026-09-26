@@ -18,8 +18,9 @@ import type { NextConfig } from "next";
  * does not, so production does not get it.
  *
  * Every allowed host is here because something specific needs it: Google
- * Identity Services for sign-in, its avatar CDN for the account menu, and
- * fonts. Adding a host means naming what needs it.
+ * Identity Services for sign-in, its avatar CDN for the account menu,
+ * Cloudinary for product photos, and fonts. Adding a host means naming what
+ * needs it.
  */
 const isDev = process.env.NODE_ENV !== "production";
 
@@ -29,7 +30,9 @@ const CSP = [
   // GSI's client script injects a <link> to its own stylesheet to style the
   // rendered sign-in button; without this host the button loads unstyled.
   "style-src 'self' 'unsafe-inline' https://accounts.google.com",
-  "img-src 'self' data: blob: https://lh3.googleusercontent.com",
+  // Cloudinary serves the product photos the dashboard stores. Remote images
+  // render `unoptimized`, so the browser fetches them from that host directly.
+  "img-src 'self' data: blob: https://lh3.googleusercontent.com https://res.cloudinary.com",
   "font-src 'self' data:",
   // The API is same-origin via the rewrite in this file, so no API host here.
   "connect-src 'self' https://accounts.google.com",

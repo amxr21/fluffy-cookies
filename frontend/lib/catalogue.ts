@@ -1,5 +1,6 @@
-import { API_URL } from "@/lib/config";
+import { API_URL, DASHBOARD_MODE } from "@/lib/config";
 import { MENU, type MenuCategory, type MenuItem } from "@/lib/menu";
+import { dashboardMenuToCategories, type DashboardMenuCategory } from "@/lib/dashboard";
 
 /**
  * The menu, from the API, with the static list as a fallback.
@@ -99,6 +100,24 @@ export function groupIntoCategories(products: ApiProduct[]): MenuCategory[] {
  * Returns the static menu on any failure — never an empty page.
  */
 export async function getMenu(): Promise<{ categories: MenuCategory[]; live: boolean }> {
+  if (DASHBOARD_MODE) {
+    const origin = process.env.API_ORIGIN?.replace(/\/$/, "");
+    if (!origin) return { categories: [], live: false };
+    try {
+      const response = await fetch(`${origin}/api/v1/public/products/menu`, {
+        next: { revalidate: 60 },
+      });
+      if (!response.ok) return { categories: [], live: false };
+      const body = (await response.json()) as { data?: DashboardMenuCategory[] };
+      return {
+        categories: dashboardMenuToCategories(Array.isArray(body.data) ? body.data : []),
+        live: true,
+      };
+    } catch {
+      // Never display the old catalogue with IDs that the dashboard cannot sell.
+      return { categories: [], live: false };
+    }
+  }
   // Server-side rendering cannot use the relative proxy path; it needs an
   // absolute origin, and API_ORIGIN is the server's own view of the backend.
   const origin = process.env.API_ORIGIN || "";

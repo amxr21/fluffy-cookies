@@ -9,6 +9,8 @@ import { SkeletonCard, SkeletonGroup } from "@/components/ui/Skeleton";
 import { useAuth } from "@/context/AuthContext";
 import { getJSON, type Paginated } from "@/lib/safeFetch";
 import type { MenuItem } from "@/lib/menu";
+import { DASHBOARD_MODE } from "@/lib/config";
+import { dashboardGet, dashboardProductToMenuItem, type DashboardProduct } from "@/lib/dashboard";
 
 /** A product row as `GET /likes/:id` returns it. */
 type ApiProduct = {
@@ -28,12 +30,19 @@ export default function LikedPage() {
   >("loading");
 
   useEffect(() => {
-    if (!user) {
-      setState("ready");
-      return;
-    }
+    // Signed out renders the sign-in prompt before `state` is read.
+    if (!user) return;
     let active = true;
     (async () => {
+      if (DASHBOARD_MODE) {
+        const res = await dashboardGet<DashboardProduct[]>("/wishlist");
+        if (!active) return;
+        if (res.ok) {
+          try { setItems(res.data.map(dashboardProductToMenuItem)); setState("ready"); }
+          catch { setState("error"); }
+        } else setState("error");
+        return;
+      }
       const res = await getJSON<Paginated<ApiProduct>>(`/likes/${user.userId}`);
       if (!active) return;
       if (res.ok && Array.isArray(res.data?.data)) {

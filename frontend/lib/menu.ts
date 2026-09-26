@@ -7,13 +7,14 @@ export type MenuItem = {
   /** Numeric id the API expects for cart/order writes. The backend validates
    *  product_id with `z.coerce.number()`, so a slug arrives as NaN and the
    *  request is rejected. Keep in sync with backend/fileStore.js. */
-  productId: number;
+  productId: string | number;
   name: string;
   description: string;
   image: string;
   /** VAT-inclusive price in minor units (fils). 4800 = AED 48.00.
    *  Integer money only — see lib/money.ts. */
   priceMinor: number;
+  inStock?: boolean;
 };
 
 export type MenuCategory = {

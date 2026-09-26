@@ -9,8 +9,9 @@ import {
   useState,
 } from "react";
 
-import { AUTH_KEYS } from "@/lib/config";
+import { AUTH_KEYS, DASHBOARD_MODE } from "@/lib/config";
 import { postJSON } from "@/lib/safeFetch";
+import { dashboardGet, dashboardPost, type DashboardCustomer } from "@/lib/dashboard";
 
 /**
  * Lazy auth session (per storefront template). The session lives in
@@ -30,6 +31,7 @@ export type AuthUser = {
 type AuthContextValue = {
   user: AuthUser | null;
   isAuthenticated: boolean;
+  hydrated: boolean;
   login: (user: AuthUser) => void;
   logout: () => Promise<void>;
 };
@@ -37,6 +39,7 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue>({
   user: null,
   isAuthenticated: false,
+  hydrated: false,
   login: () => {},
   logout: async () => {},
 });
@@ -56,12 +59,30 @@ function readSession(): AuthUser | null {
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
+    if (DASHBOARD_MODE) {
+      let active = true;
+      void dashboardGet<DashboardCustomer>("/me").then((result) => {
+        if (!active) return;
+        if (result.ok) setUser({ userId: result.data.id, name: result.data.name, picture: result.data.picture ?? "", role: "customer" });
+        setHydrated(true);
+      });
+      return () => { active = false; };
+    }
+    // Legacy session lives in localStorage, which only exists after mount;
+    // reading it during render would mismatch the server HTML.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setUser(readSession());
+    setHydrated(true);
   }, []);
 
   const login = useCallback((next: AuthUser) => {
+    if (DASHBOARD_MODE) {
+      setUser(next);
+      return;
+    }
     localStorage.setItem(AUTH_KEYS.userId, next.userId);
     localStorage.setItem(AUTH_KEYS.userName, next.name);
     localStorage.setItem(AUTH_KEYS.userPicture, next.picture);
@@ -70,6 +91,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
+    if (DASHBOARD_MODE) {
+      const result = await dashboardPost<{ success: boolean }>("/auth/logout", {});
+      if (!result.ok) throw new Error(result.error.message);
+      setUser(null);
+      return;
+    }
     // Server first: the cookies are httpOnly, so only the API can clear them,
     // and the session row must be revoked or a captured token stays valid.
     await postJSON("/auth/logout", {});
@@ -79,8 +106,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, isAuthenticated: !!user, login, logout }),
-    [user, login, logout]
+    () => ({ user, isAuthenticated: !!user, hydrated, login, logout }),
+    [user, hydrated, login, logout]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -40,3 +40,11 @@ Thumbs.db
 
 # claude local
 .claude/
+
+# Private project workbook and pre-integration source snapshot
+.claude-workbook/
+
+# Docs and notes stay local. Already-tracked docs (README, RUNBOOK, ...) are
+# unaffected; a new one that belongs in the repo needs `git add -f`.
+*.md
+*.mdx

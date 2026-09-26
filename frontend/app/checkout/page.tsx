@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Container } from "@/components/ui/Container";
@@ -10,7 +10,8 @@ import { Dropdown } from "@/components/ui/Dropdown";
 import { useToast } from "@/components/providers/ToastProvider";
 import { useCart } from "@/context/CartContext";
 import { postJSON } from "@/lib/safeFetch";
-import { AUTH_KEYS } from "@/lib/config";
+import { AUTH_KEYS, DASHBOARD_MODE } from "@/lib/config";
+import { dashboardGet, dashboardPost } from "@/lib/dashboard";
 import { formatMinor, lineTotalMinor } from "@/lib/money";
 
 type PaymentMethod = "cash" | "card-on-delivery" | "online";
@@ -110,6 +111,8 @@ export default function CheckoutPage() {
   const [discountMessage, setDiscountMessage] = useState<string | null>(null);
   const [checkingCode, setCheckingCode] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [taxRatePercent, setTaxRatePercent] = useState<number | null>(DASHBOARD_MODE ? null : 0);
+  const [configError, setConfigError] = useState(false);
   /** Field errors shown inline. Populated on submit, cleared as the user types. */
   const [errors, setErrors] = useState<Partial<Record<FormField, string>>>({});
   /**
@@ -119,10 +122,29 @@ export default function CheckoutPage() {
    */
   const idempotencyKey = useRef<string | null>(null);
 
-  const totalMinor = subtotalMinor - (applied?.discountMinor ?? 0);
+  useEffect(() => {
+    if (!DASHBOARD_MODE) return;
+    let active = true;
+    void dashboardGet<{ currency: string; taxRatePercent: number; storeName: string }>("/config").then((result) => {
+      if (!active) return;
+      if (result.ok && result.data.currency === "AED" && Number.isFinite(result.data.taxRatePercent)) {
+        setTaxRatePercent(result.data.taxRatePercent);
+        setConfigError(false);
+      } else setConfigError(true);
+    });
+    return () => { active = false; };
+  }, []);
+
+  const taxMinor = DASHBOARD_MODE && taxRatePercent !== null
+    ? Math.round(subtotalMinor * taxRatePercent / 100)
+    : 0;
+  const totalMinor = DASHBOARD_MODE
+    ? subtotalMinor + taxMinor
+    : subtotalMinor - (applied?.discountMinor ?? 0);
 
   /** Ask the server what the code is worth. Checking never spends a use. */
   const applyDiscount = async () => {
+    if (DASHBOARD_MODE) return;
     const code = discount.trim();
     if (!code) return;
 
@@ -165,6 +187,10 @@ export default function CheckoutPage() {
       toast.info("Your cart is empty");
       return;
     }
+    if (DASHBOARD_MODE && (taxRatePercent === null || configError)) {
+      toast.error("Store pricing is unavailable. Please try again shortly.");
+      return;
+    }
 
     // Validate in-app rather than letting the browser show its own bubble
     // (the form sets noValidate). Errors render under each field.
@@ -184,6 +210,31 @@ export default function CheckoutPage() {
     setErrors({});
 
     setSubmitting(true);
+    if (DASHBOARD_MODE) {
+      const res = await dashboardPost<{ orderNumber: string; total: string }>("/orders", {
+        items: lines.map((line) => ({ productId: String(line.productId), quantity: line.quantity })),
+        contact: {
+          name: form.name.trim(),
+          phone: form.phone.trim(),
+          ...(form.email.trim() ? { email: form.email.trim() } : {}),
+          ...(fulfillment === "Delivery" ? {
+            address: `${form.address.trim()}, ${form.emirate.trim()}`,
+            city: form.city.trim(),
+          } : {}),
+          ...(form.note.trim() ? { note: form.note.trim() } : {}),
+        },
+        paymentMethod: payment,
+        fulfillment,
+      });
+      setSubmitting(false);
+      if (!res.ok) {
+        toast.error(res.error.message || "Couldn't place your order");
+        return;
+      }
+      clearCart();
+      router.push(`/order-success?order=${encodeURIComponent(res.data.orderNumber)}`);
+      return;
+    }
     const userId =
       typeof window !== "undefined"
         ? localStorage.getItem(AUTH_KEYS.userId)
@@ -352,7 +403,7 @@ export default function CheckoutPage() {
               )}
             </ul>
 
-            <div className="flex items-end gap-2">
+            {!DASHBOARD_MODE && <div className="flex items-end gap-2">
               <Input
                 label="Discount code"
                 className="flex-1"
@@ -377,7 +428,7 @@ export default function CheckoutPage() {
               >
                 {checkingCode ? "Checking…" : "Apply"}
               </Button>
-            </div>
+            </div>}
 
             <div className="flex flex-col gap-1 text-small text-navy/80">
               <span>Payment method</span>
@@ -396,14 +447,25 @@ export default function CheckoutPage() {
               </div>
             )}
 
+            {DASHBOARD_MODE && (
+              <div className="flex items-center justify-between text-small text-navy/80">
+                <span>VAT {taxRatePercent === null ? "" : `(${taxRatePercent}%)`}</span>
+                <span>{taxRatePercent === null ? "Loading…" : formatMinor(taxMinor)}</span>
+              </div>
+            )}
+
+            {DASHBOARD_MODE && configError && (
+              <p role="alert" className="text-small text-brown">Store pricing is unavailable. Refresh before placing an order.</p>
+            )}
+
             <div className="flex items-center justify-between border-t border-navy/20 pt-4">
               <span className="text-h4 font-bold text-navy">Total</span>
               <span className="text-h4 font-bold text-navy">
-                {formatMinor(totalMinor)}
+                {DASHBOARD_MODE && taxRatePercent === null ? "Loading…" : formatMinor(totalMinor)}
               </span>
             </div>
 
-            <Button type="submit" fullWidth disabled={submitting}>
+            <Button type="submit" fullWidth disabled={submitting || (DASHBOARD_MODE && (taxRatePercent === null || configError))}>
               {submitting ? "Placing order…" : "Place Order"}
             </Button>
           </div>

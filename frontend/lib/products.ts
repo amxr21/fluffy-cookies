@@ -7,6 +7,7 @@ export type CollectionItem = {
   name: string;
   description: string;
   image: string;
+  href?: string;
 };
 
 export const COLLECTION: CollectionItem[] = [

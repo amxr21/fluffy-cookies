@@ -11,6 +11,9 @@ export const metadata = {
     "Cookies, stuffed sweets and specialty drinks, baked fresh daily in Al Ain.",
 };
 
+// Dashboard data is only available at runtime in Coolify, not during image build.
+export const dynamic = "force-dynamic";
+
 export default async function MenuPage({
   searchParams,
 }: {
@@ -19,7 +22,7 @@ export default async function MenuPage({
   // Server component: the menu is fetched at build/revalidate time, so the
   // page ships as HTML rather than a spinner that fills in.
   const { q } = await searchParams;
-  const { categories } = await getMenu();
+  const { categories, live } = await getMenu();
 
   // Filtered on the server, so a shared search URL renders its results rather
   // than the whole menu followed by a flicker.
@@ -56,7 +59,16 @@ export default async function MenuPage({
             <MenuSearch resultCount={term ? resultCount : undefined} />
           </Suspense>
 
-          {term && resultCount === 0 ? (
+          {!live && categories.length === 0 ? (
+            <div className="rounded-3xl border border-navy/15 bg-white/60 py-20 text-center">
+              <p className="text-h3 font-bold text-navy">Menu unavailable</p>
+              <p className="mt-2 text-body text-navy/70">Please try again shortly.</p>
+            </div>
+          ) : categories.length === 0 ? (
+            <div className="rounded-3xl border border-navy/15 bg-white/60 py-20 text-center">
+              <p className="text-h3 font-bold text-navy">No products yet</p>
+            </div>
+          ) : term && resultCount === 0 ? (
             <div className="rounded-3xl border border-navy/15 bg-white/60 py-20 text-center backdrop-blur-md">
               <p className="text-h3 font-bold text-navy">Nothing matched “{q}”</p>
               <p className="mt-2 text-body text-navy/70">

@@ -14,7 +14,7 @@ export function CartItemCard({
   return (
     <article className="flex gap-5 rounded-2xl border border-navy/15 bg-white/40 p-2 h-60">
       <div className="relative  w-6/12 shrink-0 overflow-hidden rounded-xl max-h-56">
-        <Image src={line.image} alt={line.name} fill className="object-cover" />
+        <Image src={line.image} alt={line.name} fill unoptimized={line.image.startsWith("http")} className="object-cover" />
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col">

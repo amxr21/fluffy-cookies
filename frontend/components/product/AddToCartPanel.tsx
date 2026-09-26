@@ -44,8 +44,8 @@ export function AddToCartPanel({ item }: { item: MenuItem }) {
       </div>
 
       <div className="flex items-center gap-3">
-        <Button onClick={handleAdd} className="flex-1">
-          Add to cart
+        <Button onClick={handleAdd} disabled={item.inStock === false} className="flex-1">
+          {item.inStock === false ? "Sold out" : "Add to cart"}
         </Button>
         <button
           type="button"

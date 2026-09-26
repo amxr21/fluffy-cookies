@@ -2,13 +2,15 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { FiX } from "react-icons/fi";
 import { useEffect, useRef, useState } from "react";
 
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/components/providers/ToastProvider";
-import { GOOGLE_CLIENT_ID } from "@/lib/config";
+import { DASHBOARD_MODE, GOOGLE_CLIENT_ID } from "@/lib/config";
 import { postJSON } from "@/lib/safeFetch";
+import { dashboardPost, type DashboardCustomer } from "@/lib/dashboard";
 import { reportClientError } from "@/lib/clientLogger";
 import { cn } from "@/lib/utils";
 import { isAllowedAvatarHost } from "@/lib/avatarHost";
@@ -36,6 +38,7 @@ declare global {
 export function GoogleLoginButton() {
   const { user, login, logout } = useAuth();
   const toast = useToast();
+  const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   const [signInOpen, setSignInOpen] = useState(false);
   const [avatarFailed, setAvatarFailed] = useState(false);
@@ -54,6 +57,22 @@ export function GoogleLoginButton() {
   }, [menuOpen]);
 
   const handleCredential = async (response: { credential?: string }) => {
+    if (DASHBOARD_MODE) {
+      if (!response.credential) {
+        toast.error("Google did not provide a sign-in credential.");
+        return;
+      }
+      const result = await dashboardPost<{ customer: DashboardCustomer }>("/auth/google", { idToken: response.credential });
+      if (!result.ok) {
+        toast.error(result.error.message || "Sign-in failed. Please try again.");
+        return;
+      }
+      const customer = result.data.customer;
+      login({ userId: customer.id, name: customer.name, picture: customer.picture ?? "", role: "customer" });
+      toast.success(`Welcome${customer.name ? `, ${customer.name.split(" ")[0]}` : ""}!`);
+      setSignInOpen(false);
+      return;
+    }
     const result = await postJSON<AuthResponse>("/auth", {
       id_token: response?.credential,
     });
@@ -118,10 +137,15 @@ export function GoogleLoginButton() {
   }, [signInOpen, user]);
 
   const handleLogout = async () => {
-    await logout();
+    try {
+      await logout();
+    } catch {
+      toast.error("Couldn't sign out. Please try again.");
+      return;
+    }
     toast.success("Signed out");
     setMenuOpen(false);
-    setTimeout(() => (window.location.href = "/"), 300);
+    setTimeout(() => router.push("/"), 300);
   };
 
   if (user) {

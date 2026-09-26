@@ -5,7 +5,7 @@ export type CartLine = {
   /** Slug — stable key for UI state and localStorage. */
   id: string;
   /** Numeric id the API expects on cart/order writes (see lib/menu.ts). */
-  productId: number;
+  productId: string | number;
   name: string;
   description: string;
   /** VAT-inclusive unit price in minor units (fils). */

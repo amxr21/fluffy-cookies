@@ -51,9 +51,9 @@ export default function TrackOrderPage() {
             label="Order number"
             required
             className="flex-1"
-            placeholder="e.g. FL1001"
+            placeholder="e.g. FL3K92MTQ7"
             autoCapitalize="characters"
-            hint="Starts with FL — it's on your confirmation."
+            hint="Starts with FL — it's on your confirmation email and receipt."
             error={state === "notfound" ? "We couldn't find that order." : undefined}
             value={number}
             onChange={(e) => setNumber(e.target.value)}

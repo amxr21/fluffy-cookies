@@ -105,21 +105,25 @@ describe("safeFetch", () => {
     expect(res.error.code).toBe("CONFIG_ERROR");
   });
 
-  it("attaches the bearer token when one is stored", async () => {
-    localStorage.setItem("fluffy_token", "token-123");
+  it("sends credentials so the httpOnly auth cookies travel with the request", async () => {
+    // The session is a cookie the browser attaches; nothing readable by script
+    // is involved, which is the point of moving off localStorage.
     mockFetch(200, JSON.stringify({ data: [] }));
 
-    await safeFetch("/public/cart", { baseUrl: "http://api.test" });
+    await safeFetch("/cart/1", { baseUrl: "http://api.test" });
 
     const init = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock
       .calls[0][1] as RequestInit;
-    expect(new Headers(init.headers).get("Authorization")).toBe("Bearer token-123");
+    expect(init.credentials).toBe("include");
   });
 
-  it("sends no Authorization header when signed out", async () => {
+  it("does not read a token from localStorage any more", async () => {
+    // Guards the regression: a stale token left in storage by an older build
+    // must not be picked up and sent.
+    localStorage.setItem("fluffy_token", "stale-token-from-old-build");
     mockFetch(200, JSON.stringify({ data: [] }));
 
-    await safeFetch("/public/products", { baseUrl: "http://api.test" });
+    await safeFetch("/cart/1", { baseUrl: "http://api.test" });
 
     const init = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock
       .calls[0][1] as RequestInit;

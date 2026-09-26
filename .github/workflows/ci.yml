@@ -99,14 +99,10 @@ jobs:
       - name: Build
         # Dummy build-time env. The real values live in the host's dashboard;
         # these exist only so the build can resolve `process.env` references.
-        #
-        # The API URL is deliberately unreachable: a build that silently depends
-        # on a live API at build time would pass here and fail on deploy. If the
-        # build needs data, it must handle the fetch failing.
         env:
-          # Origin only. lib/config.ts appends the /api/v1 prefix, so setting it
-          # here too would produce /api/v1/api/v1.
-          NEXT_PUBLIC_API_URL: http://localhost:9999
+          # No API URL: the browser calls this app's own origin and
+          # next.config.ts proxies server-side, so the client bundle needs no
+          # backend address. API_ORIGIN is only read at request time.
           NEXT_PUBLIC_GOOGLE_CLIENT_ID: ci-dummy.apps.googleusercontent.com
         run: pnpm --filter ./frontend build
 
@@ -144,7 +140,7 @@ jobs:
         # the repo seam — see backend/repo.js.
         env:
           USE_FILE_DATA: 'true'
-          JWT_SECRET: ci-only-secret-never-used-in-production
+          JWT_SECRET: ci-only-secret-never-used-in-production-32-plus
           GOOGLE_CLIENT_ID: ci-dummy.apps.googleusercontent.com
           LOG_CONSOLE: 'false'
         run: pnpm --filter ./backend test
@@ -190,7 +186,7 @@ jobs:
           DB_USER: root
           DB_PASSWORD: ''
           DB_NAME: fluffy_ci
-          JWT_SECRET: ci-only-secret-never-used-in-production
+          JWT_SECRET: ci-only-secret-never-used-in-production-32-plus
           GOOGLE_CLIENT_ID: ci-dummy.apps.googleusercontent.com
           LOG_CONSOLE: 'false'
         run: pnpm --filter ./backend migrate
@@ -205,7 +201,7 @@ jobs:
           DB_USER: root
           DB_PASSWORD: ''
           DB_NAME: fluffy_ci
-          JWT_SECRET: ci-only-secret-never-used-in-production
+          JWT_SECRET: ci-only-secret-never-used-in-production-32-plus
           GOOGLE_CLIENT_ID: ci-dummy.apps.googleusercontent.com
           LOG_CONSOLE: 'false'
         run: |
@@ -224,10 +220,37 @@ jobs:
           DB_USER: root
           DB_PASSWORD: ''
           DB_NAME: fluffy_ci
-          JWT_SECRET: ci-only-secret-never-used-in-production
+          JWT_SECRET: ci-only-secret-never-used-in-production-32-plus
           GOOGLE_CLIENT_ID: ci-dummy.apps.googleusercontent.com
           LOG_CONSOLE: 'false'
         run: pnpm --filter ./backend seed
+
+  frontend-budget:
+    name: Frontend · Bundle budget
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build
+        env:
+          NEXT_PUBLIC_GOOGLE_CLIENT_ID: ci-dummy.apps.googleusercontent.com
+        run: pnpm --filter ./frontend build
+
+      - name: Check the shared JS budget
+        # A JS budget is only a budget if something fails when it is exceeded.
+        # This checks the shared chunks every route pays for, which is the
+        # number that actually governs LCP on a mid-tier phone over 4G.
+        #
+        # Raising the limit is a decision to make on a pull request, with the
+        # reason in the diff — not something that drifts up unnoticed.
+        run: node frontend/scripts/check-bundle-budget.mjs
 
   # ─── Aggregate gate ──────────────────────────────────────────────
   #
@@ -247,6 +270,7 @@ jobs:
       - backend-lint
       - backend-test
       - backend-migrations
+      - frontend-budget
     # `always()` so this still runs when a dependency failed — otherwise it
     # would be skipped, and a skipped required check blocks the PR forever.
     if: always()

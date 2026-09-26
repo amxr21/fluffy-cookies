@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { dashboardServerConfig } from "@/lib/dashboardServer";
 
 const COOKIE = "fluffy_customer_session";
 const METHODS = ["GET", "POST", "PATCH", "DELETE"];
@@ -31,18 +32,19 @@ async function handler(
     return response;
   }
 
-  const origin = process.env.API_ORIGIN?.replace(/\/$/, "");
-  if (!origin) {
+  const config = dashboardServerConfig();
+  if (!config) {
     return NextResponse.json(
       { error: { code: "CONFIG_ERROR", message: "Storefront API is not configured" } },
       { status: 503 }
     );
   }
 
-  const remote = new URL(`${origin}/api/v1/public/${path}`);
+  const remote = new URL(`${config.origin}/api/v1/public/${path}`);
   remote.search = request.nextUrl.search;
   const headers = new Headers();
   headers.set("accept", "application/json");
+  headers.set("x-api-key", config.apiKey);
   const language = request.headers.get("accept-language");
   if (language) headers.set("accept-language", language);
   if (request.method !== "GET") headers.set("content-type", "application/json");

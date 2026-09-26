@@ -1,6 +1,7 @@
 import { API_URL, DASHBOARD_MODE } from "@/lib/config";
 import { MENU, type MenuCategory, type MenuItem } from "@/lib/menu";
 import { dashboardMenuToCategories, type DashboardMenuCategory } from "@/lib/dashboard";
+import { dashboardServerConfig } from "@/lib/dashboardServer";
 
 /**
  * The menu, from the API, with the static list as a fallback.
@@ -101,10 +102,11 @@ export function groupIntoCategories(products: ApiProduct[]): MenuCategory[] {
  */
 export async function getMenu(): Promise<{ categories: MenuCategory[]; live: boolean }> {
   if (DASHBOARD_MODE) {
-    const origin = process.env.API_ORIGIN?.replace(/\/$/, "");
-    if (!origin) return { categories: [], live: false };
+    const config = dashboardServerConfig();
+    if (!config) return { categories: [], live: false };
     try {
-      const response = await fetch(`${origin}/api/v1/public/products/menu`, {
+      const response = await fetch(`${config.origin}/api/v1/public/products/menu`, {
+        headers: { "x-api-key": config.apiKey },
         next: { revalidate: 60 },
       });
       if (!response.ok) return { categories: [], live: false };

@@ -84,7 +84,7 @@ export default function TrackOrderPage() {
           )}
           {state === "found" && order && (
             <div className="space-y-6">
-              <OrderProgress status={order.status} />
+              <OrderProgress status={order.status} fulfillment={order.fulfillment} />
               <OrderCard order={order} />
             </div>
           )}

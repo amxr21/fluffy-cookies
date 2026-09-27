@@ -1,6 +1,6 @@
 import Image from "next/image";
 
-import { ORDER_PHASES, getOrderProgress } from "@/lib/orders";
+import { getOrderPhases, getOrderProgress } from "@/lib/orders";
 import { cn } from "@/lib/utils";
 
 /**
@@ -11,8 +11,16 @@ import { cn } from "@/lib/utils";
  * backend status via `getOrderProgress`, so unknown or renamed statuses still
  * render a sensible timeline instead of an empty one.
  */
-export function OrderProgress({ status }: { status: string }) {
-  const { currentIndex, cancelled } = getOrderProgress(status);
+export function OrderProgress({ status, fulfillment }: { status: string; fulfillment?: string }) {
+  const { currentIndex, cancelled, returned } = getOrderProgress(status);
+  const phases = getOrderPhases(fulfillment);
+
+  if (returned) {
+    return <section aria-label="Order progress" className="rounded-2xl border border-brown/30 bg-brown/5 p-5 text-center">
+      <p className="text-h4 font-bold text-brown">Order returned</p>
+      <p className="mt-1 text-small text-brown/80">This order has been returned. Contact us for help with your return.</p>
+    </section>;
+  }
 
   if (cancelled) {
     return (
@@ -25,9 +33,9 @@ export function OrderProgress({ status }: { status: string }) {
     );
   }
 
-  const current = ORDER_PHASES[currentIndex];
+  const current = phases[currentIndex];
   // Fill the connecting rail up to the current phase.
-  const pct = (currentIndex / (ORDER_PHASES.length - 1)) * 100;
+  const pct = (currentIndex / (phases.length - 1)) * 100;
 
   return (
     <section aria-label="Order progress" className="rounded-2xl border border-navy/15 bg-white/40 p-5">
@@ -42,7 +50,7 @@ export function OrderProgress({ status }: { status: string }) {
         />
         <div>
           <p className="text-caption font-semibold uppercase tracking-wide text-navy/50">
-            Step {currentIndex + 1} of {ORDER_PHASES.length}
+            Step {currentIndex + 1} of {phases.length}
           </p>
           <p className="text-h4 font-bold text-navy">{current.label}</p>
           <p className="mt-1 text-small text-navy/70">{current.description}</p>
@@ -63,7 +71,7 @@ export function OrderProgress({ status }: { status: string }) {
           style={{ width: `${pct}%` }}
         />
 
-        {ORDER_PHASES.map((phase, i) => {
+        {phases.map((phase, i) => {
           const done = i < currentIndex;
           const active = i === currentIndex;
           return (

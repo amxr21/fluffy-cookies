@@ -88,8 +88,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     let active = true;
     void (async () => {
       try {
-        const cart = await mergeGuestCart(userId, localStorage, () => currentUser.current === userId);
+        const { cart, skipped } = await mergeGuestCart(userId, localStorage, () => currentUser.current === userId);
         if (active) setLines(dashboardCartToLines(cart));
+        if (active && skipped.length > 0) {
+          toast.info(`${skipped.join(", ")} ${skipped.length === 1 ? "is" : "are"} no longer available, so ${skipped.length === 1 ? "it wasn't" : "they weren't"} added to your cart.`);
+        }
       } catch {
         if (!active) return;
         toast.error("Couldn't save all your guest items. They are kept on this device; sign in again to retry.");

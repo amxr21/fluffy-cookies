@@ -19,7 +19,7 @@ describe("guest cart transfer", () => {
     api.patch.mockResolvedValueOnce(ok(cart({ a: 6 }))).mockResolvedValueOnce(ok(cart({ a: 6, b: 3 })));
     const result = await mergeGuestCart("customer", localStorage, () => true);
     expect(api.patch.mock.calls.map((call) => call[1])).toEqual([{ productId: "a", quantity: 6 }, { productId: "b", quantity: 3 }]);
-    expect(result.lines).toHaveLength(2);
+    expect(result.cart.lines).toHaveLength(2);
     expect(JSON.parse(localStorage.getItem(GUEST_CART_KEY)!)).toEqual([]);
   });
 
@@ -111,5 +111,51 @@ describe("guest cart transfer", () => {
     await expect(mergeGuestCart("customer", localStorage, () => true)).rejects.toThrow("could not be confirmed");
     expect(localStorage.getItem("fluffy_cart_transfer")).toBe(checkpoint);
     expect(api.patch).toHaveBeenCalledTimes(1);
+  });
+
+  it("caps the transfer at the dashboard's 99-per-line limit instead of retrying a refused target forever", async () => {
+    localStorage.setItem(GUEST_CART_KEY, JSON.stringify([guest("a", 20)]));
+    api.get.mockResolvedValue(ok(cart({ a: 90 })));
+    api.patch.mockResolvedValueOnce(ok(cart({ a: 99 })));
+    await mergeGuestCart("customer", localStorage, () => true);
+    expect(api.patch.mock.calls.map((call) => call[1])).toEqual([{ productId: "a", quantity: 99 }]);
+    expect(JSON.parse(localStorage.getItem(GUEST_CART_KEY)!)).toEqual([]);
+    expect(localStorage.getItem("fluffy_cart_transfer")).toBeNull();
+  });
+
+  it("does not write when the account line is already at the limit", async () => {
+    localStorage.setItem(GUEST_CART_KEY, JSON.stringify([guest("a", 5)]));
+    api.get.mockResolvedValue(ok(cart({ a: 99 })));
+    await mergeGuestCart("customer", localStorage, () => true);
+    expect(api.patch).not.toHaveBeenCalled();
+    expect(JSON.parse(localStorage.getItem(GUEST_CART_KEY)!)).toEqual([]);
+  });
+
+  it("lets go of an item the dashboard refuses for good, names it, and still moves the rest", async () => {
+    const archived = { ...guest("gone", 1), name: "Retired Cookie" };
+    localStorage.setItem(GUEST_CART_KEY, JSON.stringify([archived, guest("b", 2)]));
+    api.get.mockResolvedValue(ok(cart({})));
+    api.patch
+      .mockResolvedValueOnce({ ok: false, status: 400, error: { message: "That product is not available" } })
+      .mockResolvedValueOnce(ok(cart({ b: 2 })));
+
+    const result = await mergeGuestCart("customer", localStorage, () => true);
+
+    expect(result.skipped).toEqual(["Retired Cookie"]);
+    expect(result.cart.lines.map((line) => line.productId)).toEqual(["b"]);
+    expect(JSON.parse(localStorage.getItem(GUEST_CART_KEY)!)).toEqual([]);
+    expect(localStorage.getItem("fluffy_cart_transfer")).toBeNull();
+    // The next sign-in has nothing left to retry — no error on every page load.
+    api.patch.mockClear();
+    await mergeGuestCart("customer", localStorage, () => true);
+    expect(api.patch).not.toHaveBeenCalled();
+  });
+
+  it("still keeps an item for a retry when the failure is temporary", async () => {
+    localStorage.setItem(GUEST_CART_KEY, JSON.stringify([guest("a", 1)]));
+    api.get.mockResolvedValue(ok(cart({})));
+    api.patch.mockResolvedValueOnce({ ok: false, status: 503, error: { message: "Storefront API is unavailable" } });
+    await expect(mergeGuestCart("customer", localStorage, () => true)).rejects.toThrow("unavailable");
+    expect(JSON.parse(localStorage.getItem(GUEST_CART_KEY)!)).toEqual([guest("a", 1)]);
   });
 });

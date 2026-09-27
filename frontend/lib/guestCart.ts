@@ -5,7 +5,28 @@ export const GUEST_CART_KEY = "fluffy_cart";
 export const GUEST_TRANSFER_KEY = "fluffy_cart_transfer";
 const TRANSFER_KEY = GUEST_TRANSFER_KEY;
 type Transfer = { userId: string; productId: string; quantity: number; guestQuantity: number };
-const pending = new Map<string, Promise<DashboardCart>>();
+/** What a merge produced: the account cart, and guest items the dashboard refused for good. */
+export type MergeResult = { cart: DashboardCart; skipped: string[] };
+const pending = new Map<string, Promise<MergeResult>>();
+
+/** The dashboard's per-line ceiling. A target above it is refused on every retry. */
+const MAX_LINE_QUANTITY = 99;
+
+/**
+ * A refusal that retrying cannot fix: the product is gone, archived, or the
+ * request is invalid. Network errors, 401, 429 and 5xx are worth a retry.
+ */
+const isPermanentRefusal = (status: number) => [400, 404, 409, 422].includes(status);
+
+/** Take `quantity` of one product off the guest cart. */
+function consumeGuestLine(storage: Storage, productId: string, quantity: number) {
+  const remaining = readGuestCart(storage).flatMap((line) => {
+    if (line.productId !== productId) return [line];
+    const left = line.quantity - quantity;
+    return left > 0 ? [{ ...line, quantity: left }] : [];
+  });
+  storage.setItem(GUEST_CART_KEY, JSON.stringify(remaining));
+}
 
 export function readGuestCart(storage: Pick<Storage, "getItem">): CartLine[] {
   const raw: unknown = JSON.parse(storage.getItem(GUEST_CART_KEY) ?? "[]");
@@ -23,10 +44,11 @@ export function readGuestCart(storage: Pick<Storage, "getItem">): CartLine[] {
 
 /** Checkpoint each transfer before sending it, so retries after a lost response
  * set the original absolute quantity. Only acknowledged guest quantities clear. */
-async function transferGuestCart(userId: string, storage: Storage, isCurrent: () => boolean): Promise<DashboardCart> {
+async function transferGuestCart(userId: string, storage: Storage, isCurrent: () => boolean): Promise<MergeResult> {
   const initial = await dashboardGet<DashboardCart>("/cart");
   if (!initial.ok) throw new Error(initial.error.message);
   let cart = initial.data;
+  const skipped: string[] = [];
   const guests = readGuestCart(storage);
   const saved: Transfer | null = JSON.parse(storage.getItem(TRANSFER_KEY) ?? "null");
   if (saved && (typeof saved.userId !== "string" || typeof saved.productId !== "string"
@@ -50,39 +72,45 @@ async function transferGuestCart(userId: string, storage: Storage, isCurrent: ()
     }
   }
   for (const snapshot of guests) {
-    if (!isCurrent()) return cart;
+    if (!isCurrent()) return { cart, skipped };
     // Another tab can edit guest quantities while the preceding write waits.
     const guest = readGuestCart(storage).find((line) => line.productId === snapshot.productId);
     if (!guest) continue;
     const existing = cart.lines.find((line) => line.productId === guest.productId);
-    const transfer = saved?.productId === guest.productId ? {
-      ...saved, quantity: saved.quantity + guest.quantity - saved.guestQuantity, guestQuantity: guest.quantity,
-    } : {
-      userId, productId: guest.productId, quantity: (existing?.quantity ?? 0) + guest.quantity, guestQuantity: guest.quantity,
+    const desired = saved?.productId === guest.productId
+      ? saved.quantity + guest.quantity - saved.guestQuantity
+      : (existing?.quantity ?? 0) + guest.quantity;
+    const transfer: Transfer = {
+      userId, productId: guest.productId, quantity: Math.min(desired, MAX_LINE_QUANTITY), guestQuantity: guest.quantity,
     };
     storage.setItem(TRANSFER_KEY, JSON.stringify(transfer));
     if ((existing?.quantity ?? 0) < transfer.quantity) {
       const result = await dashboardPatch<DashboardCart>("/cart", { productId: guest.productId, quantity: transfer.quantity });
-      if (!result.ok) throw new Error(result.error.message);
+      if (!result.ok) {
+        // Retrying a permanent refusal would fail on every sign-in and block
+        // every item behind it. Let this one go, and say so.
+        if (isPermanentRefusal(result.status)) {
+          skipped.push(guest.name);
+          consumeGuestLine(storage, guest.productId, guest.quantity);
+          storage.removeItem(TRANSFER_KEY);
+          continue;
+        }
+        throw new Error(result.error.message);
+      }
       cart = result.data;
       if (!cart.lines.some((line) => line.productId === guest.productId && line.quantity >= transfer.quantity)) {
         throw new Error("Your guest item could not be saved in full.");
       }
     }
-    if (!isCurrent()) return cart;
-    const remaining = readGuestCart(storage).flatMap((line) => {
-      if (line.productId !== guest.productId) return [line];
-      const quantity = line.quantity - guest.quantity;
-      return quantity > 0 ? [{ ...line, quantity }] : [];
-    });
-    storage.setItem(GUEST_CART_KEY, JSON.stringify(remaining));
+    if (!isCurrent()) return { cart, skipped };
+    consumeGuestLine(storage, guest.productId, guest.quantity);
     storage.removeItem(TRANSFER_KEY);
   }
-  return cart;
+  return { cart, skipped };
 }
 
 /** Reuse the in-flight operation across React effect replays. */
-export function mergeGuestCart(userId: string, storage: Storage, isCurrent: () => boolean): Promise<DashboardCart> {
+export function mergeGuestCart(userId: string, storage: Storage, isCurrent: () => boolean): Promise<MergeResult> {
   const existing = pending.get(userId);
   if (existing) return existing;
   const operation = transferGuestCart(userId, storage, isCurrent).finally(() => pending.delete(userId));

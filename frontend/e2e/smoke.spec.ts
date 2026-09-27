@@ -73,6 +73,19 @@ test.describe("content", () => {
   });
 });
 
+test("browser checkout mutations pass the production Origin check", async ({ page }) => {
+  await page.goto("/checkout");
+  const status = await page.evaluate(async () => {
+    const response = await fetch("/api/storefront/orders", {
+      method: "POST",
+      headers: { "content-type": "application/json", "idempotency-key": "e2e-origin-check" },
+      body: JSON.stringify({ items: [{ productId: "p_classic-chocolate-chip", quantity: 1 }] }),
+    });
+    return response.status;
+  });
+  expect(status).toBe(201);
+});
+
 test.describe("at phone width", () => {
   test.use({ viewport: { width: 360, height: 780 } });
 

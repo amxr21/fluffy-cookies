@@ -10,6 +10,7 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DELETE, GET, PATCH, POST } from "@/app/api/storefront/[...path]/route";
+import { SITE_URL } from "@/lib/site";
 
 const ORIGIN = "http://dashboard.test";
 const KEY = "adk_test_key_never_in_browser";
@@ -32,7 +33,8 @@ async function call(
   init: { body?: string; headers?: Record<string, string>; query?: string } = {}
 ) {
   const url = `http://localhost:3000/api/storefront/${path}${init.query ?? ""}`;
-  const request = new NextRequest(url, { method, headers: init.headers, body: init.body });
+  const origin = process.env.NODE_ENV === "production" ? new URL(SITE_URL).origin : "http://localhost:3000";
+  const request = new NextRequest(url, { method, headers: { ...(method === "GET" ? {} : { origin }), ...init.headers }, body: init.body });
   return HANDLERS[method](request, { params: Promise.resolve({ path: path.split("/") }) });
 }
 
@@ -192,6 +194,30 @@ describe("branch is chosen by the server, never the browser", () => {
 });
 
 describe("checkout retry safety", () => {
+  it.each(["[]", "null", "123", '"body"', "false"])("rejects non-object JSON %s before any upstream call", async (body) => {
+    const response = await call("POST", "orders", { body });
+    expect(response.status).toBe(400);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("caps streamed bodies even without Content-Length", async () => {
+    const response = await call("POST", "cart", { body: JSON.stringify({ message: "x".repeat(65536) }) });
+    expect(response.status).toBe(413);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects oversized Content-Length before consuming the body", async () => {
+    const response = await call("POST", "orders", { body: "{}", headers: { "content-length": "65537" } });
+    expect(response.status).toBe(413);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each(["https://attacker.test", "null", ""])("rejects mutation origin %s including logout", async (origin) => {
+    const response = await call("POST", "auth/logout", { headers: { origin } });
+    expect(response.status).toBe(403);
+    expect(response.headers.get("set-cookie")).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
   it("forwards the browser's Idempotency-Key on checkout", async () => {
     await call("POST", "orders", { body: "{}", headers: { "idempotency-key": "key-1" } });
     expect(upstreamCall().headers.get("idempotency-key")).toBe("key-1");
@@ -309,5 +335,37 @@ describe("the readable signed-in hint", () => {
     fetchMock.mockResolvedValue(upstreamJson({ error: { code: "UNAUTHORIZED" } }, 401));
     const response = await call("GET", "me");
     expect(cookies(response)).toEqual([]);
+  });
+});
+
+describe("the Origin check cannot take the shop down", () => {
+  // Production mode: the configured site is https://fluffy.ae (the SITE_URL
+  // fallback), but the shop may also be served on another host.
+  beforeEach(() => vi.stubEnv("NODE_ENV", "production"));
+
+  it("accepts the configured public origin", async () => {
+    const response = await call("POST", "auth/logout", { headers: { origin: "https://fluffy.ae" } });
+    expect(response.status).toBe(200);
+  });
+
+  it("accepts the host the browser actually asked for (www, apex, a preview URL)", async () => {
+    const response = await call("POST", "auth/logout", {
+      headers: { origin: "https://www.shop.test", host: "www.shop.test", "x-forwarded-proto": "https" },
+    });
+    expect(response.status).toBe(200);
+  });
+
+  it("still refuses a cross-site page, even with a forged X-Forwarded-Host", async () => {
+    const response = await call("POST", "auth/logout", {
+      headers: { origin: "https://attacker.test", host: "www.shop.test", "x-forwarded-host": "attacker.test" },
+    });
+    expect(response.status).toBe(403);
+  });
+
+  it("refuses an http origin when the proxy says the site is https", async () => {
+    const response = await call("POST", "auth/logout", {
+      headers: { origin: "http://www.shop.test", host: "www.shop.test", "x-forwarded-proto": "https" },
+    });
+    expect(response.status).toBe(403);
   });
 });

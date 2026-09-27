@@ -2,9 +2,12 @@ import { isIP } from "node:net";
 import { NextRequest, NextResponse } from "next/server";
 import { dashboardBranchId, dashboardServerConfig } from "@/lib/dashboardServer";
 import { SESSION_HINT_COOKIE } from "@/lib/sessionHint";
+import { readJsonObject, RequestBodyError } from "@/lib/requestBody";
+import { SITE_URL } from "@/lib/site";
 
 const COOKIE = "fluffy_customer_session";
 const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
+const MAX_BODY_BYTES = 64 * 1024;
 
 /**
  * The shopper's address, as the proxy in front of this server saw it.
@@ -23,10 +26,43 @@ function shopperIp(request: NextRequest): string | null {
   return candidate && isIP(candidate) ? candidate : null;
 }
 
+/**
+ * Whether a state-changing request came from this storefront's own pages.
+ *
+ * SameSite=Lax already keeps the session cookie off cross-site POSTs; this is
+ * the second lock, and it also refuses what SameSite lets through (a request
+ * from a sibling subdomain). Accepted origins: the configured public site
+ * (NEXT_PUBLIC_SITE_URL) and the site the browser actually asked for — its
+ * Host, with the proxy's X-Forwarded-Proto — so a www/apex split, a preview
+ * URL or a missing SITE_URL cannot take sign-in and checkout down. A
+ * cross-site page can forge neither: the browser sets Origin, and Host is the
+ * site it is talking to. X-Forwarded-Host is deliberately not trusted.
+ */
+function isSameOrigin(request: NextRequest): boolean {
+  const origin = request.headers.get("origin");
+  if (!origin) return false;
+  const allowed = new Set([request.nextUrl.origin]);
+  const host = request.headers.get("host");
+  const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const proto = forwardedProto === "http" || forwardedProto === "https"
+    ? forwardedProto
+    : request.nextUrl.protocol.replace(":", "");
+  if (host) allowed.add(`${proto}://${host}`);
+  if (process.env.NODE_ENV === "production") {
+    try {
+      allowed.add(new URL(SITE_URL).origin);
+    } catch {
+      /* an unparseable SITE_URL leaves the request's own origin */
+    }
+  }
+  return allowed.has(origin);
+}
+
 /** Expire the session and its readable hint together — never one without the other. */
 function clearSession(response: NextResponse) {
-  response.cookies.set(COOKIE, "", { httpOnly: true, path: "/api/storefront", maxAge: 0 });
-  response.cookies.set(SESSION_HINT_COOKIE, "", { path: "/", maxAge: 0 });
+  const options = { secure: process.env.NODE_ENV === "production", sameSite: "lax" as const, maxAge: 0 };
+  response.cookies.set(COOKIE, "", { ...options, httpOnly: true, path: "/api/storefront" });
+  response.cookies.set(SESSION_HINT_COOKIE, "", { ...options, path: "/" });
 }
 const METHODS = ["GET", "POST", "PATCH", "DELETE"];
 
@@ -52,6 +88,22 @@ async function handler(
     return NextResponse.json({ error: { code: "NOT_FOUND", message: "Not found" } }, { status: 404 });
   }
 
+  let parsedBody: Record<string, unknown> | undefined;
+  if (request.method !== "GET") {
+    if (!isSameOrigin(request)) {
+      return NextResponse.json({ error: { code: "FORBIDDEN", message: "Invalid request origin" } }, { status: 403 });
+    }
+    try {
+      parsedBody = await readJsonObject(request, MAX_BODY_BYTES);
+    } catch (error) {
+      const status = error instanceof RequestBodyError ? error.status : 400;
+      return NextResponse.json(
+        { error: { code: status === 413 ? "PAYLOAD_TOO_LARGE" : "BAD_REQUEST", message: status === 413 ? "Request body is too large" : "Invalid request body" } },
+        { status }
+      );
+    }
+  }
+
   if (path === "auth/logout") {
     const response = NextResponse.json({ data: { success: true } });
     clearSession(response);
@@ -73,7 +125,7 @@ async function handler(
   // never picks one; the server fills it in, the same way getMenu() does.
   const isCatalogueRead = request.method === "GET" && /^products(\/|$)/.test(path);
   const isCheckout = request.method === "POST" && path === "orders";
-  let requestBody = request.method === "GET" ? undefined : await request.text();
+  let requestBody = parsedBody === undefined ? undefined : JSON.stringify(parsedBody);
   if (isCatalogueRead || isCheckout) {
     const branchId = await dashboardBranchId(config);
     if (!branchId) {
@@ -84,14 +136,7 @@ async function handler(
     }
     if (isCatalogueRead) remote.searchParams.set("branchId", branchId);
     if (isCheckout) {
-      try {
-        requestBody = JSON.stringify({ ...(JSON.parse(requestBody || "{}") as object), branchId });
-      } catch {
-        return NextResponse.json(
-          { error: { code: "BAD_REQUEST", message: "Invalid request body" } },
-          { status: 400 }
-        );
-      }
+      requestBody = JSON.stringify({ ...parsedBody, branchId });
     }
   }
   const headers = new Headers();

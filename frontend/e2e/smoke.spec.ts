@@ -70,6 +70,15 @@ test.describe("content", () => {
     await page.goto("/checkout", { waitUntil: "networkidle" });
     await expect(page.getByText("Classic Chocolate Chip").filter({ visible: true }).first()).toBeVisible();
     await expect(page.getByRole("button", { name: /place order/i })).toBeEnabled();
+    await expect(page.getByText("Includes VAT", { exact: true })).toBeVisible();
+    const summary = page.getByRole("heading", { name: "Order Summary", exact: true }).locator("..");
+    await expect(summary).toContainText(/Total\s*AED\s*48\.00/);
+    await page.getByLabel("Promo code").fill("INVALID");
+    await page.getByRole("button", { name: "Apply code", exact: true }).click();
+    await expect(page.getByRole("alert").filter({ hasText: "This promo code cannot be applied" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /place order/i })).toBeDisabled();
+    await page.getByRole("button", { name: "Remove code", exact: true }).click();
+    await expect(page.getByRole("button", { name: /place order/i })).toBeEnabled();
   });
 });
 

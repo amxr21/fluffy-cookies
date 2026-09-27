@@ -173,6 +173,16 @@ describe("branch is chosen by the server, never the browser", () => {
     expect(JSON.parse(String(upstreamCall().init.body))).toEqual({ branchId: "branch_main", items: [] });
   });
 
+  it("prices the cart at the server-selected branch with the shopper session", async () => {
+    const response = await call("POST", "orders/quote", {
+      body: JSON.stringify({ branchId: "forged_branch", items: [], discountCode: "SAVE" }),
+      headers: { cookie: `${COOKIE}=customer.jwt` },
+    });
+    expect(response.status).toBe(200);
+    expect(JSON.parse(String(upstreamCall().init.body))).toEqual({ branchId: "branch_main", items: [], discountCode: "SAVE" });
+    expect(upstreamCall().headers.get("authorization")).toBe("Bearer customer.jwt");
+  });
+
   it("uses the dashboard's only selling branch when none is configured", async () => {
     vi.stubEnv("DASHBOARD_BRANCH_ID", "");
     fetchMock

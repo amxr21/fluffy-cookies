@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Container } from "@/components/ui/Container";
@@ -9,7 +9,9 @@ import { Input, Textarea } from "@/components/ui/Field";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { useToast } from "@/components/providers/ToastProvider";
 import { useCart } from "@/context/CartContext";
-import { dashboardGet, dashboardPost } from "@/lib/dashboard";
+import { dashboardPost, decimalToMinor } from "@/lib/dashboard";
+import { useAuth } from "@/context/AuthContext";
+import { useCheckoutQuote } from "@/lib/useCheckoutQuote";
 import { formatMinor, lineTotalMinor } from "@/lib/money";
 
 type PaymentMethod = "cash" | "card-on-delivery" | "online";
@@ -84,7 +86,8 @@ function validate(
 export default function CheckoutPage() {
   const router = useRouter();
   const toast = useToast();
-  const { lines, subtotalMinor, clearCart } = useCart();
+  const { lines, clearCart } = useCart();
+  const { user } = useAuth();
 
   const [form, setForm] = useState({
     name: "",
@@ -98,8 +101,9 @@ export default function CheckoutPage() {
   const [fulfillment, setFulfillment] = useState("Pickup");
   const [payment, setPayment] = useState<PaymentMethod>("cash");
   const [submitting, setSubmitting] = useState(false);
-  const [taxRatePercent, setTaxRatePercent] = useState<number | null>(null);
-  const [configError, setConfigError] = useState(false);
+  const [promoDraft, setPromoDraft] = useState("");
+  const [discountCode, setDiscountCode] = useState("");
+  const { quote, error: pricingError, loading: pricingLoading, refresh: refreshQuote } = useCheckoutQuote(lines, discountCode, user?.userId);
   /** Field errors shown inline. Populated on submit, cleared as the user types. */
   const [errors, setErrors] = useState<Partial<Record<FormField, string>>>({});
   /**
@@ -108,23 +112,13 @@ export default function CheckoutPage() {
    * rather than a second order. Cleared only once an order is actually placed.
    */
   const idempotencyKey = useRef<string | null>(null);
+  const attemptBody = useRef<string | null>(null);
 
-  useEffect(() => {
-    let active = true;
-    void dashboardGet<{ currency: string; taxRatePercent: number; storeName: string }>("/config").then((result) => {
-      if (!active) return;
-      if (result.ok && result.data.currency === "AED" && Number.isFinite(result.data.taxRatePercent)) {
-        setTaxRatePercent(result.data.taxRatePercent);
-        setConfigError(false);
-      } else setConfigError(true);
-    });
-    return () => { active = false; };
-  }, []);
-
-  const taxMinor = taxRatePercent !== null
-    ? Math.round(subtotalMinor * taxRatePercent / 100)
-    : 0;
-  const totalMinor = subtotalMinor + taxMinor;
+  const taxMinor = quote ? decimalToMinor(quote.taxAmount) : 0;
+  const totalMinor = quote ? decimalToMinor(quote.total) : 0;
+  const priceChanged = quote?.lines.some(priced => lines.some(line => line.productId === priced.productId && line.priceMinor !== decimalToMinor(priced.price))) ?? false;
+  const summaryLines = quote ? quote.lines.map(priced => ({ id: priced.productId, name: priced.name, quantity: priced.quantity, priceMinor: decimalToMinor(priced.price), currency: "AED" })) : lines;
+  const paymentOptions = PAYMENT_OPTIONS.map(option => fulfillment === "Pickup" ? { ...option, label: option.label.replace("on Delivery", "on Pickup") } : option);
 
   const set = (k: keyof typeof form, v: string) => {
     setForm((f) => ({ ...f, [k]: v }));
@@ -138,7 +132,7 @@ export default function CheckoutPage() {
       toast.info("Your cart is empty");
       return;
     }
-    if (taxRatePercent === null || configError) {
+    if (!quote || pricingLoading || pricingError) {
       toast.error("Store pricing is unavailable. Please try again shortly.");
       return;
     }
@@ -162,12 +156,7 @@ export default function CheckoutPage() {
 
     setSubmitting(true);
 
-    // Generated once per attempt and reused across retries of that attempt.
-    if (!idempotencyKey.current) {
-      idempotencyKey.current = crypto.randomUUID();
-    }
-
-    const res = await dashboardPost<{ orderNumber: string; total: string }>("/orders", {
+    const body = {
       items: lines.map((line) => ({ productId: String(line.productId), quantity: line.quantity })),
       contact: {
         name: form.name.trim(),
@@ -181,13 +170,21 @@ export default function CheckoutPage() {
       },
       paymentMethod: payment,
       fulfillment,
-    }, { "Idempotency-Key": idempotencyKey.current });
+      ...(quote.discountCode ? { discountCode: quote.discountCode } : {}),
+    };
+    const fingerprint = JSON.stringify(body);
+    if (!idempotencyKey.current || attemptBody.current !== fingerprint) {
+      idempotencyKey.current = crypto.randomUUID();
+      attemptBody.current = fingerprint;
+    }
+    const res = await dashboardPost<{ orderNumber: string; total: string }>("/orders", body, { "Idempotency-Key": idempotencyKey.current });
     setSubmitting(false);
     if (!res.ok) {
       toast.error(res.error.message || "Couldn't place your order");
       return;
     }
     idempotencyKey.current = null;
+    attemptBody.current = null;
     clearCart();
     router.push(`/order-success?order=${encodeURIComponent(res.data.orderNumber)}`);
   };
@@ -310,7 +307,7 @@ export default function CheckoutPage() {
             <h2 className="text-h4 font-bold text-navy">Order Summary</h2>
 
             <ul className="space-y-2 text-small text-navy/80">
-              {lines.map((l) => (
+              {summaryLines.map((l) => (
                 <li key={l.id} className="flex justify-between gap-3">
                   <span className="truncate">
                     {l.name} × {l.quantity}
@@ -330,28 +327,35 @@ export default function CheckoutPage() {
               <Dropdown
                 ariaLabel="Payment method"
                 value={payment}
-                options={PAYMENT_OPTIONS}
+                options={paymentOptions}
                 onChange={(v) => setPayment(v as PaymentMethod)}
               />
             </div>
 
             <div className="flex items-center justify-between text-small text-navy/80">
-              <span>VAT {taxRatePercent === null ? "" : `(${taxRatePercent}%)`}</span>
-              <span>{taxRatePercent === null ? "Loading…" : formatMinor(taxMinor)}</span>
+              <span>{quote?.pricesIncludeTax ? "Includes VAT" : "VAT"}</span>
+              <span>{quote ? formatMinor(taxMinor) : "—"}</span>
             </div>
 
-            {configError && (
-              <p role="alert" className="text-small text-brown">Store pricing is unavailable. Refresh before placing an order.</p>
-            )}
+            <div className="space-y-3">
+              <Input label="Promo code" maxLength={64} value={promoDraft} onChange={event => setPromoDraft(event.target.value)} />
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" disabled={submitting || !promoDraft.trim()} onClick={() => setDiscountCode(promoDraft.trim())}>Apply code</Button>
+                {discountCode && <Button type="button" variant="outline" disabled={submitting} onClick={() => { setDiscountCode(""); setPromoDraft(""); }}>Remove code</Button>}
+              </div>
+              {quote?.discountCode && <p className="text-small text-navy">{quote.discountCode}: −{formatMinor(decimalToMinor(quote.discountAmount))}</p>}
+            </div>
+            {priceChanged && <p role="status" className="text-small text-brown">Prices have changed since you added items. The summary shows current prices.</p>}
+            {pricingError && <div className="space-y-2"><p role="alert" className="text-small text-brown">{pricingError}</p><Button type="button" variant="outline" onClick={refreshQuote}>Retry pricing</Button></div>}
 
             <div className="flex items-center justify-between border-t border-navy/20 pt-4">
               <span className="text-h4 font-bold text-navy">Total</span>
               <span className="text-h4 font-bold text-navy">
-                {taxRatePercent === null ? "Loading…" : formatMinor(totalMinor)}
+                {quote ? formatMinor(totalMinor) : pricingLoading ? "Loading…" : "—"}
               </span>
             </div>
 
-            <Button type="submit" fullWidth disabled={submitting || taxRatePercent === null || configError}>
+            <Button type="submit" fullWidth disabled={submitting || !quote || pricingLoading || Boolean(pricingError) || lines.length === 0}>
               {submitting ? "Placing order…" : "Place Order"}
             </Button>
           </div>

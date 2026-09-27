@@ -75,6 +75,7 @@ function allowed(path: string, method: string): boolean {
   if (path === "cart") return ["GET", "POST", "PATCH", "DELETE"].includes(method);
   if (path === "wishlist") return ["GET", "POST"].includes(method);
   if (path === "orders") return ["GET", "POST"].includes(method);
+  if (path === "orders/quote") return method === "POST";
   return path === "orders/track" && method === "GET";
 }
 
@@ -124,7 +125,7 @@ async function handler(
   // Catalogue reads and checkout are per branch in the dashboard. The browser
   // never picks one; the server fills it in, the same way getMenu() does.
   const isCatalogueRead = request.method === "GET" && /^products(\/|$)/.test(path);
-  const isCheckout = request.method === "POST" && path === "orders";
+  const isCheckout = request.method === "POST" && (path === "orders" || path === "orders/quote");
   let requestBody = parsedBody === undefined ? undefined : JSON.stringify(parsedBody);
   if (isCatalogueRead || isCheckout) {
     const branchId = await dashboardBranchId(config);

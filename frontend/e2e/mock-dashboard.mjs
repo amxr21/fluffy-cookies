@@ -55,7 +55,11 @@ const routes = {
   "GET /api/v1/public/products/menu": () => [200, { data: MENU }],
   "GET /api/v1/public/me": () => [401, { error: { code: "UNAUTHORIZED", message: "Please sign in to continue" } }],
   "GET /api/v1/public/orders/track": () => [404, { error: { code: "NOT_FOUND", message: "No order found with that reference and phone number" } }],
-  "POST /api/v1/public/orders": () => [201, { data: { orderNumber: "ORD-1001-E2E001", subtotal: "48.00", discountAmount: "0.00", taxAmount: "2.40", total: "50.40" } }],
+  "POST /api/v1/public/orders/quote": (body) => body.discountCode ? [400, { error: { code: "BAD_REQUEST", message: "This promo code cannot be applied" } }] : [200, { data: {
+    lines: [{ productId: "p_classic-chocolate-chip", variantId: null, name: "Classic Chocolate Chip", quantity: 1, price: "48.00", lineTotal: "48.00" }],
+    subtotal: "48.00", discountCode: null, discountAmount: "0.00", taxAmount: "2.29", total: "48.00", pricesIncludeTax: true,
+  } }],
+  "POST /api/v1/public/orders": () => [201, { data: { orderNumber: "ORD-1001-E2E001", subtotal: "48.00", discountAmount: "0.00", taxAmount: "2.29", total: "48.00" } }],
 };
 
 http
@@ -70,9 +74,12 @@ http
     const { pathname } = new URL(req.url, "http://mock");
     const route = routes[`${req.method} ${pathname}`];
     if (!route) return send(404, { error: { code: "NOT_FOUND", message: `No mock for ${req.method} ${pathname}` } });
-    // Drain the body so POSTs complete cleanly.
-    req.resume();
-    req.on("end", () => send(...route()));
+    let body = "";
+    req.on("data", chunk => { body += chunk; });
+    req.on("end", () => {
+      try { send(...route(body ? JSON.parse(body) : {})); }
+      catch { send(400, { error: { code: "BAD_REQUEST", message: "Invalid JSON" } }); }
+    });
   })
   // No startup log: Playwright's webServer polls the URL to know it is up.
   .listen(PORT, "127.0.0.1");

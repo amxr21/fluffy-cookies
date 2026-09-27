@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -14,6 +15,7 @@ import { dashboardCartToLines, dashboardDelete, dashboardGet, dashboardPatch, da
 import { useAuth } from "@/context/AuthContext";
 import type { CartLine } from "@/lib/cart";
 import { lineTotalMinor, sumMinor } from "@/lib/money";
+import { GUEST_CART_KEY, GUEST_TRANSFER_KEY, mergeGuestCart, readGuestCart } from "@/lib/guestCart";
 
 /**
  * Global cart state: the dashboard's saved cart when signed in, localStorage
@@ -34,7 +36,7 @@ type CartContextValue = {
   clearCart: () => void;
 };
 
-const STORAGE_KEY = "fluffy_cart";
+const STORAGE_KEY = GUEST_CART_KEY;
 
 const noop = async () => {};
 const CartContext = createContext<CartContextValue>({
@@ -48,30 +50,19 @@ const CartContext = createContext<CartContextValue>({
   clearCart: () => {},
 });
 
-/**
- * Keep only guest lines the dashboard can sell. Carts saved by the retired
- * Fluffy API carry numeric product IDs (or none); the dashboard's are strings,
- * and a numeric one would fail every checkout.
- */
-function migrateGuestLines(raw: unknown): CartLine[] {
-  if (!Array.isArray(raw)) return [];
-  return raw.flatMap((line): CartLine[] => {
-    if (!line || typeof line !== "object") return [];
-    const l = line as Partial<CartLine>;
-    if (typeof l.id !== "string") return [];
-    return typeof l.productId === "string" ? [l as CartLine] : [];
-  });
-}
-
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const toast = useToast();
   const { user, hydrated: authHydrated } = useAuth();
   const [lines, setLines] = useState<CartLine[]>([]);
   const [hydrated, setHydrated] = useState(false);
+  const currentUser = useRef<string | undefined>(undefined);
+
+  useEffect(() => { currentUser.current = user?.userId; }, [user?.userId]);
 
   const persistGuest = useCallback((next: CartLine[]) => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      if (next.length === 0) localStorage.removeItem(GUEST_TRANSFER_KEY);
     } catch {
       /* quota */
     }
@@ -83,25 +74,36 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     const userId = user?.userId;
     if (!userId) {
       try {
-        const raw = localStorage.getItem(STORAGE_KEY);
         // Guest cart is in localStorage, readable only after mount.
         // eslint-disable-next-line react-hooks/set-state-in-effect
-        if (raw) setLines(migrateGuestLines(JSON.parse(raw)));
+        setLines(readGuestCart(localStorage));
       } catch {
-        /* ignore */
+        setLines([]);
       }
       setHydrated(true);
       return;
     }
+    setHydrated(false);
+    setLines([]);
     let active = true;
-    (async () => {
-      const res = await dashboardGet<DashboardCart>("/cart");
-      if (!active) return;
-      if (res.ok) {
-        try { setLines(dashboardCartToLines(res.data)); }
-        catch { toast.error("Couldn't read your cart."); }
-      } else toast.error(res.error.message);
-      setHydrated(true);
+    void (async () => {
+      try {
+        const cart = await mergeGuestCart(userId, localStorage, () => currentUser.current === userId);
+        if (active) setLines(dashboardCartToLines(cart));
+      } catch {
+        if (!active) return;
+        toast.error("Couldn't save all your guest items. They are kept on this device; sign in again to retry.");
+        try {
+          const res = await dashboardGet<DashboardCart>("/cart");
+          if (!active) return;
+          if (res.ok) setLines(dashboardCartToLines(res.data));
+          else toast.error(res.error.message);
+        } catch {
+          if (active) toast.error("Couldn't read your cart. Please try again in a moment.");
+        }
+      } finally {
+        if (active) setHydrated(true);
+      }
     })();
     return () => {
       active = false;
@@ -110,6 +112,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const addToCart = useCallback(
     async (item: AddToCartInput): Promise<boolean> => {
+      if (!hydrated) {
+        toast.error("Your cart is still loading. Please try again in a moment.");
+        return false;
+      }
       const qty = item.quantity ?? 1;
       // guest: local-only cart
       if (!user) {
@@ -140,11 +146,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       toast.success("Added to your cart", { title: "In your cart", action: { label: "Check Cart", href: "/cart" } });
       return true;
     },
-    [persistGuest, toast, user]
+    [persistGuest, toast, user, hydrated]
   );
 
   const setQuantity = useCallback(
     async (id: string, quantity: number) => {
+      if (!hydrated) return;
       const q = Math.max(0, quantity);
       if (user) {
         const productId = lines.find((line) => line.id === id)?.productId;
@@ -165,11 +172,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         return next;
       });
     },
-    [persistGuest, user, lines, toast]
+    [persistGuest, user, lines, toast, hydrated]
   );
 
   const removeFromCart = useCallback(
     async (id: string) => {
+      if (!hydrated) return;
       if (user) {
         const productId = lines.find((line) => line.id === id)?.productId;
         if (productId === undefined) return;
@@ -186,13 +194,14 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         return next;
       });
     },
-    [persistGuest, user, lines, toast]
+    [persistGuest, user, lines, toast, hydrated]
   );
 
   const clearCart = useCallback(() => {
     setLines([]);
-    persistGuest([]);
-  }, [persistGuest]);
+    // Failed transfers must survive an account checkout and sign-out.
+    if (!user) persistGuest([]);
+  }, [persistGuest, user]);
 
   const { count, subtotalMinor } = useMemo(
     () => ({

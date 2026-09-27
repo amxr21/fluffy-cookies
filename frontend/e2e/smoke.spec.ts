@@ -78,11 +78,6 @@ test.describe("at phone width", () => {
 
   for (const route of ROUTES) {
     test(`${route} does not scroll sideways`, async ({ page }) => {
-      // Known bug FX-09: the footer lays three columns side by side on mobile
-      // (Footer.tsx uses grid-cols classes on a flex container). test.fail()
-      // keeps CI green while it is open and turns red the moment it is fixed,
-      // so the fix PR must delete this line.
-      test.fail(true, "FX-09: footer overflows at 360px");
       await page.goto(route, { waitUntil: "networkidle" });
       const overflow = await page.evaluate(
         () => document.documentElement.scrollWidth - document.documentElement.clientWidth
@@ -91,3 +86,16 @@ test.describe("at phone width", () => {
     });
   }
 });
+
+// The footer and the story section's scroll reveal were the culprits at 360px;
+// the tablet and desktop grids get the same check so the fix cannot move the
+// overflow to another breakpoint.
+for (const width of [768, 1440]) {
+  test(`home and footer fit at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/", { waitUntil: "networkidle" });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+    await page.locator("footer").scrollIntoViewIfNeeded();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+  });
+}

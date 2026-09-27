@@ -42,7 +42,7 @@ export function Footer() {
       <Container className="py-16">
         <SectionDivider className="mx-auto mb-14 w-2/3 max-w-3xl" />
 
-        <div className="flex gap-12 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-12 md:grid-cols-2 lg:grid-cols-4">
           {/* Brand + socials */}
           <div className="grow">
             <Image src="/icons/logo.svg" alt={SITE.name} width={130} height={47} className="h-11 w-auto" />
@@ -60,11 +60,8 @@ export function Footer() {
             </ul>
           </div>
 
-          <div className="flex gap-2 grow">
-            <LinkColumn title="Quick Links" links={QUICK_LINKS} />
-            <LinkColumn title="Policies" links={POLICY_LINKS} />
-
-          </div>
+          <LinkColumn title="Quick Links" links={QUICK_LINKS} />
+          <LinkColumn title="Policies" links={POLICY_LINKS} />
 
           {/* Contact */}
           <div className=" grow">

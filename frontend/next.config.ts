@@ -34,7 +34,7 @@ const CSP = [
   // render `unoptimized`, so the browser fetches them from that host directly.
   "img-src 'self' data: blob: https://lh3.googleusercontent.com https://res.cloudinary.com",
   "font-src 'self' data:",
-  // The API is same-origin via the rewrite in this file, so no API host here.
+  // The API is same-origin via the /api/storefront bridge, so no API host here.
   "connect-src 'self' https://accounts.google.com",
   "frame-src https://accounts.google.com",
   "form-action 'self'",
@@ -58,25 +58,6 @@ const nextConfig: NextConfig = {
         pathname: "/a/**",
       },
     ],
-  },
-
-  /**
-   * Proxy the API through this origin.
-   *
-   * The browser calls /api/v1/* on the storefront, and Next forwards to the
-   * backend server-side. That keeps auth cookies same-site, so they can be
-   * `SameSite=Lax` and the browser's own CSRF protection applies — the
-   * alternative for a split-origin deploy is `SameSite=None` plus a
-   * double-submit token layer on every mutation.
-   *
-   * The backend URL is read at request time and is NOT NEXT_PUBLIC_: the
-   * browser no longer needs to know where the API lives, which also means the
-   * API origin is not advertised in the client bundle.
-   */
-  async rewrites() {
-    if (process.env.NEXT_PUBLIC_DATA_SOURCE === "admin-dashboard") return [];
-    const target = (process.env.API_ORIGIN || "http://localhost:4000").replace(/\/$/, "");
-    return [{ source: "/api/v1/:path*", destination: `${target}/api/v1/:path*` }];
   },
 
   async headers() {

@@ -9,13 +9,12 @@ import {
   useState,
 } from "react";
 
-import { AUTH_KEYS, DASHBOARD_MODE } from "@/lib/config";
-import { postJSON } from "@/lib/safeFetch";
 import { dashboardGet, dashboardPost, type DashboardCustomer } from "@/lib/dashboard";
 
 /**
- * Lazy auth session (per storefront template). The session lives in
- * localStorage; this context exposes it reactively and provides login/logout.
+ * Lazy auth session. The session itself is an httpOnly cookie that only the
+ * /api/storefront bridge can read; this context asks the dashboard who that
+ * cookie belongs to (`/me`) and exposes the answer reactively.
  * Stateful actions (addToCart, etc.) gate on `userId` and prompt sign-in.
  */
 
@@ -44,64 +43,28 @@ const AuthContext = createContext<AuthContextValue>({
   logout: async () => {},
 });
 
-function readSession(): AuthUser | null {
-  if (typeof window === "undefined") return null;
-  const userId = localStorage.getItem(AUTH_KEYS.userId);
-  const name = localStorage.getItem(AUTH_KEYS.userName);
-  if (!userId) return null;
-  return {
-    userId,
-    name: name ?? "",
-    picture: localStorage.getItem(AUTH_KEYS.userPicture) ?? "",
-    role: localStorage.getItem(AUTH_KEYS.userRole) ?? "customer",
-  };
-}
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    if (DASHBOARD_MODE) {
-      let active = true;
-      void dashboardGet<DashboardCustomer>("/me").then((result) => {
-        if (!active) return;
-        if (result.ok) setUser({ userId: result.data.id, name: result.data.name, picture: result.data.picture ?? "", role: "customer" });
-        setHydrated(true);
-      });
-      return () => { active = false; };
-    }
-    // Legacy session lives in localStorage, which only exists after mount;
-    // reading it during render would mismatch the server HTML.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setUser(readSession());
-    setHydrated(true);
+    let active = true;
+    void dashboardGet<DashboardCustomer>("/me").then((result) => {
+      if (!active) return;
+      if (result.ok) setUser({ userId: result.data.id, name: result.data.name, picture: result.data.picture ?? "", role: "customer" });
+      setHydrated(true);
+    });
+    return () => { active = false; };
   }, []);
 
   const login = useCallback((next: AuthUser) => {
-    if (DASHBOARD_MODE) {
-      setUser(next);
-      return;
-    }
-    localStorage.setItem(AUTH_KEYS.userId, next.userId);
-    localStorage.setItem(AUTH_KEYS.userName, next.name);
-    localStorage.setItem(AUTH_KEYS.userPicture, next.picture);
-    localStorage.setItem(AUTH_KEYS.userRole, next.role);
     setUser(next);
   }, []);
 
   const logout = useCallback(async () => {
-    if (DASHBOARD_MODE) {
-      const result = await dashboardPost<{ success: boolean }>("/auth/logout", {});
-      if (!result.ok) throw new Error(result.error.message);
-      setUser(null);
-      return;
-    }
-    // Server first: the cookies are httpOnly, so only the API can clear them,
-    // and the session row must be revoked or a captured token stays valid.
-    await postJSON("/auth/logout", {});
-    Object.values(AUTH_KEYS).forEach((k) => localStorage.removeItem(k));
-    localStorage.removeItem("fluffy_cart");
+    // The cookie is httpOnly, so only the bridge can clear it.
+    const result = await dashboardPost<{ success: boolean }>("/auth/logout", {});
+    if (!result.ok) throw new Error(result.error.message);
     setUser(null);
   }, []);
 

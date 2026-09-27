@@ -1,14 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
 
 /**
- * E2E smoke suite: the production build, in dashboard mode, against a mock
- * dashboard (e2e/mock-dashboard.mjs).
+ * E2E smoke suite: the production build against a mock dashboard
+ * (e2e/mock-dashboard.mjs). It runs `next start`, so build first:
  *
- * It runs `next start`, so build first with NEXT_PUBLIC_DATA_SOURCE set to
- * `admin-dashboard` — that value is inlined at build time, and a build without
- * it serves the legacy storefront instead:
- *
- *   NEXT_PUBLIC_DATA_SOURCE=admin-dashboard pnpm build && pnpm test:e2e
+ *   pnpm build && pnpm test:e2e
  *
  * The API origin, key and branch are read at request time, so the web server
  * below points them at the mock.

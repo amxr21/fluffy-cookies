@@ -3,11 +3,9 @@ import {
   DiscoverSection,
   FeaturesSection,
   HeroSection,
-  PromoSection,
   SpecialCTABanner,
   StorySection,
 } from "@/components/sections";
-import { DASHBOARD_MODE } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +17,6 @@ export default function Home() {
       <DiscoverSection />
       <CollageSection />
       <FeaturesSection />
-      {!DASHBOARD_MODE && <PromoSection />}
       <SpecialCTABanner />
     </main>
   );

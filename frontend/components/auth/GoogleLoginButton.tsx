@@ -8,23 +8,12 @@ import { useEffect, useRef, useState } from "react";
 
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/components/providers/ToastProvider";
-import { DASHBOARD_MODE, GOOGLE_CLIENT_ID } from "@/lib/config";
-import { postJSON } from "@/lib/safeFetch";
+import { GOOGLE_CLIENT_ID } from "@/lib/config";
 import { dashboardPost, type DashboardCustomer } from "@/lib/dashboard";
 import { reportClientError } from "@/lib/clientLogger";
 import { cn } from "@/lib/utils";
 import { isAllowedAvatarHost } from "@/lib/avatarHost";
 
-type AuthResponse = {
-  success: boolean;
-  // No `token` — the session arrives as httpOnly cookies the server sets.
-  name: string;
-  picture?: string;
-  userId: string;
-  role?: string;
-};
-
-// minimal shape of the Google Identity Services global
 type GsiId = {
   initialize: (cfg: { client_id: string; callback: (r: { credential?: string }) => void }) => void;
   renderButton: (el: HTMLElement, opts: Record<string, unknown>) => void;
@@ -57,44 +46,24 @@ export function GoogleLoginButton() {
   }, [menuOpen]);
 
   const handleCredential = async (response: { credential?: string }) => {
-    if (DASHBOARD_MODE) {
-      if (!response.credential) {
-        toast.error("Google did not provide a sign-in credential.");
-        return;
-      }
-      const result = await dashboardPost<{ customer: DashboardCustomer }>("/auth/google", { idToken: response.credential });
-      if (!result.ok) {
-        toast.error(result.error.message || "Sign-in failed. Please try again.");
-        return;
-      }
-      const customer = result.data.customer;
-      login({ userId: customer.id, name: customer.name, picture: customer.picture ?? "", role: "customer" });
-      toast.success(`Welcome${customer.name ? `, ${customer.name.split(" ")[0]}` : ""}!`);
-      setSignInOpen(false);
+    if (!response.credential) {
+      toast.error("Google did not provide a sign-in credential.");
       return;
     }
-    const result = await postJSON<AuthResponse>("/auth", {
-      id_token: response?.credential,
-    });
-    if (!result.ok || !result.data?.success) {
+    const result = await dashboardPost<{ customer: DashboardCustomer }>("/auth/google", { idToken: response.credential });
+    if (!result.ok) {
       reportClientError({
         source: "google-signin",
-        message: `Auth failed: ${result.ok ? "no success" : result.error.message}`,
+        message: `Auth failed: ${result.error.message}`,
         component: "GoogleLoginButton",
       });
-      toast.error("Sign-in failed. Please try again.");
+      toast.error(result.error.message || "Sign-in failed. Please try again.");
       return;
     }
-    const d = result.data;
-    login({
-      userId: d.userId,
-      name: d.name,
-      picture: d.picture ?? "",
-      role: d.role ?? "customer",
-    });
-    toast.success(`Welcome${d.name ? `, ${d.name.split(" ")[0]}` : ""}!`);
+    const customer = result.data.customer;
+    login({ userId: customer.id, name: customer.name, picture: customer.picture ?? "", role: "customer" });
+    toast.success(`Welcome${customer.name ? `, ${customer.name.split(" ")[0]}` : ""}!`);
     setSignInOpen(false);
-    setTimeout(() => window.location.reload(), 400);
   };
 
   // render Google's official button inside the modal

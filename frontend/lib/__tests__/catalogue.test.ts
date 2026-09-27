@@ -1,79 +1,90 @@
-import { describe, expect, it } from "vitest";
+// @vitest-environment node
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { groupIntoCategories } from "@/lib/catalogue";
+import { getMenu } from "@/lib/catalogue";
 
-/**
- * Grouping API product rows into the menu's categories.
- *
- * `lib/menu.ts` was one of three hand-maintained copies of the same products,
- * each with its own `productId` kept in step by hand. The API is now the source
- * of truth; this covers the shaping between the two.
- */
+const fetchMock = vi.fn();
 
-const row = (over: Partial<Record<string, unknown>> = {}) => ({
-  id: 1,
-  slug: "classic-chocolate-chip",
-  name: "Classic Chocolate Chip",
-  description: "Golden edges.",
-  price_minor: 4800,
-  currency: "AED",
-  image: "/images/cookies/1.jpg",
-  category: "cookies",
-  ...over,
+const menuBody = {
+  data: [
+    {
+      id: "cat-cookies",
+      title: "Cookies",
+      slug: "cookies",
+      items: [
+        {
+          id: "prod-1",
+          slug: "classic-chocolate-chip",
+          name: "Classic Chocolate Chip",
+          description: "Golden edges.",
+          price: "48.00",
+          image: null,
+          stock: 5,
+          inStock: true,
+          category: { id: "cat-cookies", name: "Cookies", slug: "cookies" },
+        },
+      ],
+    },
+  ],
+};
+
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+
+beforeEach(() => {
+  fetchMock.mockReset();
+  vi.stubGlobal("fetch", fetchMock);
+  vi.stubEnv("API_ORIGIN", "http://dashboard.test");
+  vi.stubEnv("DASHBOARD_API_KEY", "adk_test");
+  vi.stubEnv("DASHBOARD_BRANCH_ID", "branch_main");
 });
 
-describe("groupIntoCategories", () => {
-  it("groups rows under their category", () => {
-    const out = groupIntoCategories([
-      row({ id: 1, category: "cookies" }),
-      row({ id: 2, category: "cookies" }),
-      row({ id: 11, category: "drinks" }),
-    ] as never);
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
 
-    expect(out).toHaveLength(2);
-    expect(out[0].items).toHaveLength(2);
+describe("getMenu", () => {
+  it("reads the branch's menu with the integration key and maps it", async () => {
+    fetchMock.mockResolvedValue(json(menuBody));
+    const { categories, live } = await getMenu();
+
+    const [url, init] = fetchMock.mock.calls[0] as [URL, { headers: Record<string, string> }];
+    expect(String(url)).toBe("http://dashboard.test/api/v1/public/products/menu?branchId=branch_main");
+    expect(init.headers["x-api-key"]).toBe("adk_test");
+    expect(live).toBe(true);
+    expect(categories[0].items[0]).toMatchObject({
+      id: "classic-chocolate-chip",
+      productId: "prod-1",
+      priceMinor: 4800,
+    });
   });
 
-  it("orders categories deliberately, not however the database returned them", () => {
-    const out = groupIntoCategories([
-      row({ id: 11, category: "drinks" }),
-      row({ id: 1, category: "cookies" }),
-    ] as never);
-
-    // Cookies first — it is a cookie shop.
-    expect(out[0].id).toBe("cookies");
+  it("is unavailable, never a stale list, when the dashboard is not configured", async () => {
+    vi.stubEnv("DASHBOARD_API_KEY", "");
+    expect(await getMenu()).toEqual({ categories: [], live: false });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("maps price_minor onto the card's priceMinor", () => {
-    const [category] = groupIntoCategories([row({ price_minor: 5600 })] as never);
-    expect(category.items[0].priceMinor).toBe(5600);
+  it("is unavailable when the dashboard answers with an error", async () => {
+    fetchMock.mockResolvedValue(json({ error: { code: "UNAUTHORIZED" } }, 401));
+    expect(await getMenu()).toEqual({ categories: [], live: false });
   });
 
-  it("keeps the numeric id, which cart and order writes need", () => {
-    const [category] = groupIntoCategories([row({ id: 7 })] as never);
-    expect(category.items[0].productId).toBe(7);
+  it("is unavailable when the dashboard cannot be reached", async () => {
+    fetchMock.mockRejectedValue(new TypeError("fetch failed"));
+    expect(await getMenu()).toEqual({ categories: [], live: false });
   });
 
-  it("falls back to the numeric id when a row has no slug", () => {
-    // The products table has no slug column yet; the UI still needs a key.
-    const [category] = groupIntoCategories([row({ id: 9, slug: undefined })] as never);
-    expect(category.items[0].id).toBe("9");
+  it("is unavailable when no branch can be chosen", async () => {
+    vi.stubEnv("DASHBOARD_BRANCH_ID", "");
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    fetchMock.mockResolvedValue(json({ data: [{ id: "a" }, { id: "b" }] }));
+    expect(await getMenu()).toEqual({ categories: [], live: false });
   });
 
-  it("gives a known category its real title", () => {
-    const [category] = groupIntoCategories([row({ category: "cookies" })] as never);
-    expect(category.title).toBe("Cookies");
-  });
-
-  it("does not drop a product in an unexpected category", () => {
-    // A category added in the admin later must still appear, titled by its own
-    // key rather than vanishing from the menu.
-    const out = groupIntoCategories([row({ category: "seasonal" })] as never);
-    expect(out).toHaveLength(1);
-    expect(out[0].items).toHaveLength(1);
-  });
-
-  it("returns nothing for no rows rather than throwing", () => {
-    expect(groupIntoCategories([])).toEqual([]);
+  it("treats a malformed body as an empty live menu", async () => {
+    fetchMock.mockResolvedValue(json({ data: "nope" }));
+    expect(await getMenu()).toEqual({ categories: [], live: true });
   });
 });

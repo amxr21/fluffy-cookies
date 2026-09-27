@@ -1,10 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 
 /**
- * Every public route renders in the production build, in dashboard mode.
+ * Every public route renders in the production build.
  *
  * What counts as broken here: a non-200 document, or an uncaught exception in
- * the page. Failed XHRs are not counted — a guest's `/me` is a 401 by design.
+ * the page. Failed XHRs are not counted — the mock does not serve every call.
  */
 const ROUTES = [
   "/",

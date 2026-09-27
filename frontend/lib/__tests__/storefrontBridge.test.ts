@@ -249,3 +249,65 @@ describe("failure handling", () => {
     expect(response.headers.get("x-internal")).toBeNull();
   });
 });
+
+describe("shopper identity for the dashboard's per-shopper rate limits", () => {
+  it("forwards the proxy's X-Real-IP as X-Storefront-Client-IP", async () => {
+    await call("GET", "config", { headers: { "x-real-ip": "203.0.113.7" } });
+    expect(upstreamCall().headers.get("x-storefront-client-ip")).toBe("203.0.113.7");
+  });
+
+  it("falls back to the LAST X-Forwarded-For entry — the one the proxy appended", async () => {
+    await call("GET", "config", { headers: { "x-forwarded-for": "6.6.6.6, 198.51.100.4" } });
+    expect(upstreamCall().headers.get("x-storefront-client-ip")).toBe("198.51.100.4");
+  });
+
+  it("accepts IPv6", async () => {
+    await call("GET", "config", { headers: { "x-real-ip": "2001:db8::1" } });
+    expect(upstreamCall().headers.get("x-storefront-client-ip")).toBe("2001:db8::1");
+  });
+
+  it("sends nothing when there is no usable address", async () => {
+    await call("GET", "config", { headers: { "x-real-ip": "not-an-ip; drop table" } });
+    expect(upstreamCall().headers.get("x-storefront-client-ip")).toBeNull();
+    fetchMock.mockClear();
+    await call("GET", "config");
+    expect(upstreamCall().headers.get("x-storefront-client-ip")).toBeNull();
+  });
+});
+
+describe("the readable signed-in hint", () => {
+  const cookies = (response: Response) => response.headers.getSetCookie();
+
+  it("is set on sign-in, readable by page script, and site-wide", async () => {
+    fetchMock.mockResolvedValue(upstreamJson({ data: { token: "new.jwt", customer: { id: "c1" } } }));
+    const response = await call("POST", "auth/google", { body: '{"idToken":"google-id-token"}' });
+    const hint = cookies(response).find((c) => c.startsWith("fluffy_signed_in="));
+    expect(hint).toMatch(/^fluffy_signed_in=1;/);
+    expect(hint).toMatch(/Path=\/(;|$)/);
+    expect(hint).not.toMatch(/HttpOnly/i);
+    // …and it is only a hint: the credential stays in the httpOnly cookie.
+    expect(hint).not.toContain("new.jwt");
+  });
+
+  it("is cleared with the session on sign-out", async () => {
+    const response = await call("POST", "auth/logout");
+    const set = cookies(response);
+    expect(set.some((c) => /^fluffy_customer_session=;.*Max-Age=0/i.test(c))).toBe(true);
+    expect(set.some((c) => /^fluffy_signed_in=;.*Max-Age=0/i.test(c))).toBe(true);
+  });
+
+  it("is cleared with the session when the dashboard rejects it", async () => {
+    fetchMock.mockResolvedValue(upstreamJson({ error: { code: "UNAUTHORIZED" } }, 401));
+    const response = await call("GET", "me", { headers: { cookie: `${COOKIE}=expired.jwt` } });
+    expect(response.status).toBe(401);
+    const set = cookies(response);
+    expect(set.some((c) => /^fluffy_customer_session=;/.test(c))).toBe(true);
+    expect(set.some((c) => /^fluffy_signed_in=;/.test(c))).toBe(true);
+  });
+
+  it("leaves a guest's cookies alone on a 401", async () => {
+    fetchMock.mockResolvedValue(upstreamJson({ error: { code: "UNAUTHORIZED" } }, 401));
+    const response = await call("GET", "me");
+    expect(cookies(response)).toEqual([]);
+  });
+});

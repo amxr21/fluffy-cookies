@@ -10,6 +10,7 @@ import {
 } from "react";
 
 import { dashboardGet, dashboardPost, type DashboardCustomer } from "@/lib/dashboard";
+import { hasSessionHint } from "@/lib/sessionHint";
 
 /**
  * Lazy auth session. The session itself is an httpOnly cookie that only the
@@ -48,6 +49,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
+    // A guest has no session to look up; asking anyway costs a dashboard call
+    // per page view, all of it spent on a 401. See lib/sessionHint.ts.
+    if (!hasSessionHint(document.cookie)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setHydrated(true);
+      return;
+    }
     let active = true;
     void dashboardGet<DashboardCustomer>("/me").then((result) => {
       if (!active) return;

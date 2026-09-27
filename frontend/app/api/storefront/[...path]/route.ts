@@ -1,7 +1,33 @@
+import { isIP } from "node:net";
 import { NextRequest, NextResponse } from "next/server";
 import { dashboardBranchId, dashboardServerConfig } from "@/lib/dashboardServer";
+import { SESSION_HINT_COOKIE } from "@/lib/sessionHint";
 
 const COOKIE = "fluffy_customer_session";
+const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
+
+/**
+ * The shopper's address, as the proxy in front of this server saw it.
+ *
+ * The dashboard rate-limits per shopper, but every call it receives comes from
+ * this server — without this header it limits the whole shop as one visitor
+ * (the 21st order of the hour was refused for everyone). The proxy (Traefik on
+ * Coolify) sets X-Real-IP and appends the peer to X-Forwarded-For; a client can
+ * write anything at the START of X-Forwarded-For, so only the last entry is
+ * read. Nothing is sent unless it parses as an IP.
+ */
+function shopperIp(request: NextRequest): string | null {
+  const real = request.headers.get("x-real-ip")?.trim();
+  const forwarded = request.headers.get("x-forwarded-for")?.split(",").pop()?.trim();
+  const candidate = real || forwarded;
+  return candidate && isIP(candidate) ? candidate : null;
+}
+
+/** Expire the session and its readable hint together — never one without the other. */
+function clearSession(response: NextResponse) {
+  response.cookies.set(COOKIE, "", { httpOnly: true, path: "/api/storefront", maxAge: 0 });
+  response.cookies.set(SESSION_HINT_COOKIE, "", { path: "/", maxAge: 0 });
+}
 const METHODS = ["GET", "POST", "PATCH", "DELETE"];
 
 function allowed(path: string, method: string): boolean {
@@ -28,7 +54,7 @@ async function handler(
 
   if (path === "auth/logout") {
     const response = NextResponse.json({ data: { success: true } });
-    response.cookies.set(COOKIE, "", { httpOnly: true, path: "/api/storefront", maxAge: 0 });
+    clearSession(response);
     return response;
   }
 
@@ -73,6 +99,8 @@ async function handler(
   headers.set("x-api-key", config.apiKey);
   const language = request.headers.get("accept-language");
   if (language) headers.set("accept-language", language);
+  const ip = shopperIp(request);
+  if (ip) headers.set("x-storefront-client-ip", ip);
   if (request.method !== "GET") headers.set("content-type", "application/json");
   // Checkout is retry-safe only if the browser's key reaches the dashboard.
   const idempotencyKey = request.headers.get("idempotency-key");
@@ -113,13 +141,24 @@ async function handler(
         secure: process.env.NODE_ENV === "production",
         sameSite: "lax",
         path: "/api/storefront",
-        maxAge: 60 * 60 * 24 * 7,
+        maxAge: SESSION_MAX_AGE,
+      });
+      // Readable on purpose (see lib/sessionHint.ts): it lets pages skip `/me`
+      // for guests. Carries no credential.
+      response.cookies.set(SESSION_HINT_COOKIE, "1", {
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/",
+        maxAge: SESSION_MAX_AGE,
       });
       return response;
     }
 
     const response = NextResponse.json(body, { status: upstream.status });
     response.headers.set("cache-control", "no-store");
+    // The dashboard no longer accepts this session (expired, revoked, or the
+    // customer was removed): drop it, so the pages stop acting signed in.
+    if (upstream.status === 401 && token) clearSession(response);
     return response;
   } catch {
     return NextResponse.json(

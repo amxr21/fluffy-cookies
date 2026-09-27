@@ -85,9 +85,20 @@ jobs:
       - run: pnpm --filter ./frontend test
 
   frontend-build:
-    name: Frontend · Build
+    name: Frontend · Build (${{ matrix.mode }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # NEXT_PUBLIC_DATA_SOURCE is inlined at build time and switches what ships,
+    # so each value is its own build. `dashboard` is what production runs;
+    # `legacy` stays until the old backend is retired.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mode: dashboard
+            data-source: admin-dashboard
+          - mode: legacy
+            data-source: ''
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -100,6 +111,7 @@ jobs:
         # Dummy build-time env. The real values live in the host's dashboard;
         # these exist only so the build can resolve `process.env` references.
         env:
+          NEXT_PUBLIC_DATA_SOURCE: ${{ matrix.data-source }}
           # No API URL: the browser calls this app's own origin and
           # next.config.ts proxies server-side, so the client bundle needs no
           # backend address. API_ORIGIN is only read at request time.
@@ -240,6 +252,8 @@ jobs:
 
       - name: Build
         env:
+          # Budget the bundle production actually ships.
+          NEXT_PUBLIC_DATA_SOURCE: admin-dashboard
           NEXT_PUBLIC_GOOGLE_CLIENT_ID: ci-dummy.apps.googleusercontent.com
         run: pnpm --filter ./frontend build
 
@@ -251,6 +265,39 @@ jobs:
         # Raising the limit is a decision to make on a pull request, with the
         # reason in the diff — not something that drifts up unnoticed.
         run: node frontend/scripts/check-bundle-budget.mjs
+
+  frontend-e2e:
+    name: Frontend · E2E smoke (dashboard mode)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # The production build in dashboard mode, driven by a real browser against
+    # a mock dashboard (frontend/e2e/mock-dashboard.mjs). Catches what unit
+    # tests cannot: a route that crashes on render, a bridge that drops the
+    # integration key, a menu that renders nothing.
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        run: pnpm --filter ./frontend exec playwright install --with-deps chromium
+      - name: Build (dashboard mode)
+        env:
+          NEXT_PUBLIC_DATA_SOURCE: admin-dashboard
+          NEXT_PUBLIC_GOOGLE_CLIENT_ID: ci-dummy.apps.googleusercontent.com
+        run: pnpm --filter ./frontend build
+      - name: Run the smoke suite
+        run: pnpm --filter ./frontend test:e2e
+      - name: Keep the report when it fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report
+          retention-days: 7
 
   # ─── Aggregate gate ──────────────────────────────────────────────
   #
@@ -271,6 +318,7 @@ jobs:
       - backend-test
       - backend-migrations
       - frontend-budget
+      - frontend-e2e
     # `always()` so this still runs when a dependency failed — otherwise it
     # would be skipped, and a skipped required check blocks the PR forever.
     if: always()

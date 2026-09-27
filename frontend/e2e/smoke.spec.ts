@@ -89,6 +89,27 @@ test("browser checkout mutations pass the production Origin check", async ({ pag
 test.describe("at phone width", () => {
   test.use({ viewport: { width: 360, height: 780 } });
 
+  test("navbar targets are at least 44px and the closed sign-in dialog cannot take focus", async ({ page }) => {
+    await page.goto("/", { waitUntil: "networkidle" });
+    const signIn = page.getByRole("button", { name: "Sign in", exact: true });
+    for (const target of [signIn, page.getByRole("link", { name: /view cart/i }), page.getByRole("link", { name: /fluffy.*home/i })]) {
+      const box = await target.boundingBox();
+      expect(box?.width).toBeGreaterThanOrEqual(44);
+      expect(box?.height).toBeGreaterThanOrEqual(44);
+    }
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await signIn.focus();
+    await page.keyboard.press("Enter");
+    const close = page.getByRole("button", { name: "Close sign-in dialog" });
+    await expect(close).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(signIn).toBeFocused();
+    const hiddenClose = page.getByRole("button", { name: "Close sign-in dialog", includeHidden: true });
+    await hiddenClose.evaluate((element: HTMLElement) => element.focus());
+    await expect(hiddenClose).not.toBeFocused();
+  });
+
   for (const route of ROUTES) {
     test(`${route} does not scroll sideways`, async ({ page }) => {
       await page.goto(route, { waitUntil: "networkidle" });

@@ -186,7 +186,8 @@ export default function CheckoutPage() {
     idempotencyKey.current = null;
     attemptBody.current = null;
     clearCart();
-    router.push(`/order-success?order=${encodeURIComponent(res.data.orderNumber)}`);
+    // The order response carries no fulfillment; it is what the shopper chose here.
+    router.push(`/order-success?${new URLSearchParams({ order: res.data.orderNumber, fulfillment: fulfillment.toUpperCase(), totalMinor: String(decimalToMinor(res.data.total)) })}`);
   };
 
   return (
@@ -239,7 +240,7 @@ export default function CheckoutPage() {
               autoComplete="email"
               inputMode="email"
               placeholder="you@example.com"
-              hint="Optional — we'll send your confirmation and let you know when it's ready."
+              hint="Optional — use this for order enquiries."
               value={form.email}
               onChange={(e) => set("email", e.target.value)}
             />

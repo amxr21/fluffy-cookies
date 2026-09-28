@@ -10,7 +10,7 @@ export default function ShippingPolicyPage() {
   return (
     <LegalPage
       title="Delivery & Pickup"
-      updated="8 September 2026"
+      updated="29 September 2026"
       intro="Where we deliver, what it costs, and how to collect."
     >
       <LegalSection heading="Where we deliver">
@@ -25,23 +25,23 @@ export default function ShippingPolicyPage() {
           <li>Ajman, Umm Al Quwain, Ras Al Khaimah, Fujairah — AED 40</li>
         </ul>
         <p>
-          <strong>Delivery is free on orders over AED 150.</strong>
+          <strong>Delivery is free when your order comes to AED 150 or more after any discount.</strong>
         </p>
       </LegalSection>
 
       <LegalSection heading="How long it takes">
         <p>
           Everything is baked to order. Most orders are ready the same day;
-          larger orders and event bookings need more notice. We will tell you
-          when your order is ready — track it any time with your order number,
-          no account needed.
+          larger orders and event bookings need more notice. You can track your
+          order any time with your order number and phone number — no account
+          needed.
         </p>
       </LegalSection>
 
       <LegalSection heading="Collection">
         <p>
-          Collection is free. We will let you know when your order is ready.
-          Bring your order number with you.
+          Collection is free. Track your order to see when it is ready, and
+          bring your order number with you.
         </p>
         <p>
           {CONTACT.address} · {CONTACT.hours}

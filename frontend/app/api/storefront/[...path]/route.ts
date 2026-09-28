@@ -69,7 +69,7 @@ const METHODS = ["GET", "POST", "PATCH", "DELETE"];
 function allowed(path: string, method: string): boolean {
   if (path === "auth/google") return method === "POST";
   if (path === "auth/logout") return method === "POST";
-  if (path === "config" || path === "products" || path === "products/menu") return method === "GET";
+  if (path === "config" || path === "products" || path === "products/menu" || path === "delivery-zones") return method === "GET";
   if (/^products\/[a-z0-9-]+$/.test(path)) return method === "GET";
   if (path === "me") return method === "GET";
   if (path === "cart") return ["GET", "POST", "PATCH", "DELETE"].includes(method);

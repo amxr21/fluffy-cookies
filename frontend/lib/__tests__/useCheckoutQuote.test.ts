@@ -7,7 +7,7 @@ import type { CheckoutQuote } from "@/lib/checkoutQuote";
 const post = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/dashboard", async (importOriginal) => ({ ...await importOriginal<typeof import("@/lib/dashboard")>(), dashboardPost: post }));
 const line: CartLine = { id: "cookie", productId: "p1", name: "Cookie", description: "", image: "", currency: "AED", priceMinor: 4800, quantity: 1 };
-const quote: CheckoutQuote = { lines: [{ productId: "p1", variantId: null, name: "Cookie", quantity: 1, price: "48.00", lineTotal: "48.00" }], subtotal: "48.00", discountCode: null, discountAmount: "0.00", taxAmount: "2.29", total: "48.00", pricesIncludeTax: true };
+const quote: CheckoutQuote = { lines: [{ productId: "p1", variantId: null, name: "Cookie", quantity: 1, price: "48.00", lineTotal: "48.00" }], subtotal: "48.00", discountCode: null, discountAmount: "0.00", taxAmount: "2.29", total: "48.00", pricesIncludeTax: true, deliveryFee: "0.00", deliveryZoneName: null };
 const success = { ok: true, status: 200, data: quote };
 beforeEach(() => { vi.useFakeTimers(); post.mockReset(); });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
@@ -18,7 +18,7 @@ describe("current checkout quote", () => {
     post.mockResolvedValue(success);
     const { result, rerender } = renderHook(({ quantity }) => useCheckoutQuote([{ ...line, quantity }], "SAVE", "c1"), { initialProps: { quantity: 1 } });
     await tick();
-    expect(post).toHaveBeenCalledWith("/orders/quote", { items: [{ productId: "p1", quantity: 1 }], discountCode: "SAVE" });
+    expect(post).toHaveBeenCalledWith("/orders/quote", { items: [{ productId: "p1", quantity: 1 }], discountCode: "SAVE", fulfillment: "Pickup" });
     expect(result.current.quote?.total).toBe("48.00");
     rerender({ quantity: 2 });
     expect(result.current.quote).toBeNull();
@@ -45,5 +45,18 @@ describe("current checkout quote", () => {
     act(() => result.current.refresh());
     await tick();
     expect(result.current.quote?.total).toBe("48.00");
+  });
+  it("invalidates a delivery price when the area or fulfillment changes", async () => {
+    post.mockResolvedValue(success);
+    const { result, rerender } = renderHook(({ zone, fulfillment }) => useCheckoutQuote([line], "", undefined, fulfillment, zone), { initialProps: { zone: "z1", fulfillment: "Delivery" } });
+    await tick();
+    expect(post).toHaveBeenLastCalledWith("/orders/quote", { items: [{ productId: "p1", quantity: 1 }], fulfillment: "Delivery", deliveryZoneId: "z1" });
+    rerender({ zone: "z2", fulfillment: "Delivery" });
+    expect(result.current.quote).toBeNull();
+    await tick();
+    rerender({ zone: "z2", fulfillment: "Pickup" });
+    expect(result.current.quote).toBeNull();
+    await tick();
+    expect(post).toHaveBeenLastCalledWith("/orders/quote", { items: [{ productId: "p1", quantity: 1 }], fulfillment: "Pickup" });
   });
 });

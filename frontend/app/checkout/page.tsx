@@ -12,6 +12,7 @@ import { useCart } from "@/context/CartContext";
 import { dashboardPost, decimalToMinor } from "@/lib/dashboard";
 import { useAuth } from "@/context/AuthContext";
 import { useCheckoutQuote } from "@/lib/useCheckoutQuote";
+import { useDeliveryZones } from "@/lib/useDeliveryZones";
 import { formatMinor, lineTotalMinor } from "@/lib/money";
 
 type PaymentMethod = "cash" | "card-on-delivery" | "online";
@@ -22,19 +23,6 @@ const PAYMENT_OPTIONS = [
   // Not selectable until online payments ship — shown so customers know it's
   // planned, greyed out so it can't be chosen and then rejected on submit.
   { value: "online", label: "Pay Online", disabled: true, note: "Coming soon" },
-];
-
-/** Emirates Fluffy delivers to. For choosing only — the dashboard prices the
- *  order, so nothing here decides what is charged. */
-const EMIRATE_OPTIONS = [
-  { value: "Al Ain", label: "Al Ain" },
-  { value: "Abu Dhabi", label: "Abu Dhabi" },
-  { value: "Dubai", label: "Dubai" },
-  { value: "Sharjah", label: "Sharjah" },
-  { value: "Ajman", label: "Ajman" },
-  { value: "Umm Al Quwain", label: "Umm Al Quwain" },
-  { value: "Ras Al Khaimah", label: "Ras Al Khaimah" },
-  { value: "Fujairah", label: "Fujairah" },
 ];
 
 const FULFILLMENT_OPTIONS = [
@@ -103,7 +91,9 @@ export default function CheckoutPage() {
   const [submitting, setSubmitting] = useState(false);
   const [promoDraft, setPromoDraft] = useState("");
   const [discountCode, setDiscountCode] = useState("");
-  const { quote, error: pricingError, loading: pricingLoading, refresh: refreshQuote } = useCheckoutQuote(lines, discountCode, user?.userId);
+  const { zones, error: zonesError, loading: zonesLoading, refresh: refreshZones } = useDeliveryZones();
+  const selectedZone = zones.find(zone => zone.id === form.emirate);
+  const { quote, error: pricingError, loading: pricingLoading, refresh: refreshQuote } = useCheckoutQuote(lines, discountCode, user?.userId, fulfillment, form.emirate);
   /** Field errors shown inline. Populated on submit, cleared as the user types. */
   const [errors, setErrors] = useState<Partial<Record<FormField, string>>>({});
   /**
@@ -132,7 +122,7 @@ export default function CheckoutPage() {
       toast.info("Your cart is empty");
       return;
     }
-    if (!quote || pricingLoading || pricingError) {
+    if (!quote || pricingLoading || pricingError || zonesLoading || zonesError || (fulfillment === "Delivery" && !selectedZone)) {
       toast.error("Store pricing is unavailable. Please try again shortly.");
       return;
     }
@@ -163,13 +153,14 @@ export default function CheckoutPage() {
         phone: form.phone.trim(),
         ...(form.email.trim() ? { email: form.email.trim() } : {}),
         ...(fulfillment === "Delivery" ? {
-          address: `${form.address.trim()}, ${form.emirate.trim()}`,
+          address: `${form.address.trim()}, ${selectedZone?.name ?? ""}`,
           city: form.city.trim(),
         } : {}),
         ...(form.note.trim() ? { note: form.note.trim() } : {}),
       },
       paymentMethod: payment,
       fulfillment,
+      ...(fulfillment === "Delivery" ? { deliveryZoneId: form.emirate } : {}),
       ...(quote.discountCode ? { discountCode: quote.discountCode } : {}),
     };
     const fingerprint = JSON.stringify(body);
@@ -262,12 +253,14 @@ export default function CheckoutPage() {
                   <Dropdown
                     ariaLabel="Emirate"
                     value={form.emirate}
-                    options={EMIRATE_OPTIONS}
+                    options={[{ value: "", label: zonesLoading ? "Loading areas…" : "Choose your area", disabled: true }, ...zones.map(zone => ({ value: zone.id, label: zone.name }))]}
                     onChange={(v) => set("emirate", v)}
                   />
                   {errors.emirate && (
                     <span className="text-caption text-red-700">{errors.emirate}</span>
                   )}
+                  {!zonesLoading && !zonesError && zones.length === 0 && <span role="status">Delivery is currently unavailable. Please choose pickup.</span>}
+                  {selectedZone?.freeDeliveryThreshold && <span className="text-caption">Free delivery from {formatMinor(decimalToMinor(selectedZone.freeDeliveryThreshold))} after discounts.</span>}
                 </div>
                 <Input
                   label="Address"
@@ -346,6 +339,9 @@ export default function CheckoutPage() {
               </div>
               {quote?.discountCode && <p className="text-small text-navy">{quote.discountCode}: −{formatMinor(decimalToMinor(quote.discountAmount))}</p>}
             </div>
+
+            {fulfillment === "Delivery" && quote && <div className="flex items-center justify-between text-small text-navy/80"><span>Delivery{quote.deliveryZoneName ? ` · ${quote.deliveryZoneName}` : ""}</span><span>{decimalToMinor(quote.deliveryFee) === 0 ? "Free" : formatMinor(decimalToMinor(quote.deliveryFee))}</span></div>}
+            {zonesError && <div className="space-y-2"><p role="alert" className="text-small text-brown">{zonesError}</p><Button type="button" variant="outline" onClick={refreshZones}>Retry store details</Button></div>}
             {priceChanged && <p role="status" className="text-small text-brown">Prices have changed since you added items. The summary shows current prices.</p>}
             {pricingError && <div className="space-y-2"><p role="alert" className="text-small text-brown">{pricingError}</p><Button type="button" variant="outline" onClick={refreshQuote}>Retry pricing</Button></div>}
 
@@ -356,7 +352,7 @@ export default function CheckoutPage() {
               </span>
             </div>
 
-            <Button type="submit" fullWidth disabled={submitting || !quote || pricingLoading || Boolean(pricingError) || lines.length === 0}>
+            <Button type="submit" fullWidth disabled={submitting || !quote || pricingLoading || Boolean(pricingError) || zonesLoading || Boolean(zonesError) || (fulfillment === "Delivery" && !selectedZone) || lines.length === 0}>
               {submitting ? "Placing order…" : "Place Order"}
             </Button>
           </div>

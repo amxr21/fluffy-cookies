@@ -3,7 +3,7 @@ import { readCheckoutQuote, type CheckoutQuote } from "@/lib/checkoutQuote";
 
 const quote: CheckoutQuote = {
   lines: [{ productId: "p1", variantId: null, name: "Cookie", quantity: 1, price: "48.00", lineTotal: "48.00" }],
-  subtotal: "48.00", discountCode: null, discountAmount: "0.00", taxAmount: "2.29", total: "48.00", pricesIncludeTax: true,
+  subtotal: "48.00", discountCode: null, discountAmount: "0.00", taxAmount: "2.29", total: "48.00", pricesIncludeTax: true, deliveryFee: "0.00", deliveryZoneName: null,
 };
 
 describe("checkout pricing response", () => {

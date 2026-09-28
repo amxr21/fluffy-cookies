@@ -5,19 +5,21 @@ import { dashboardPost } from "@/lib/dashboard";
 import { readCheckoutQuote, type CheckoutQuote } from "@/lib/checkoutQuote";
 import type { CartLine } from "@/lib/cart";
 
-export function useCheckoutQuote(lines: CartLine[], discountCode: string, customerId?: string) {
+export function useCheckoutQuote(lines: CartLine[], discountCode: string, customerId?: string, fulfillment = "Pickup", deliveryZoneId = "") {
   const [revision, setRevision] = useState(0);
-  const key = JSON.stringify({ items: lines.map(line => ({ productId: String(line.productId), quantity: line.quantity })), discountCode, customerId, revision });
+  const key = JSON.stringify({ items: lines.map(line => ({ productId: String(line.productId), quantity: line.quantity })), discountCode, customerId, fulfillment, deliveryZoneId, revision });
   const [result, setResult] = useState<{ key: string; quote: CheckoutQuote | null; error: string | null } | null>(null);
   useEffect(() => {
-    const snapshot = JSON.parse(key) as { items: { productId: string; quantity: number }[]; discountCode: string };
-    if (!snapshot.items.length) return;
+    const snapshot = JSON.parse(key) as { items: { productId: string; quantity: number }[]; discountCode: string; fulfillment: string; deliveryZoneId: string };
+    if (!snapshot.items.length || (snapshot.fulfillment === "Delivery" && !snapshot.deliveryZoneId)) return;
     let active = true;
     const timeout = setTimeout(() => {
       void (async () => {
         try {
           const response = await dashboardPost<CheckoutQuote>("/orders/quote", {
             items: snapshot.items,
+            fulfillment: snapshot.fulfillment,
+            ...(snapshot.fulfillment === "Delivery" ? { deliveryZoneId: snapshot.deliveryZoneId } : {}),
             ...(snapshot.discountCode ? { discountCode: snapshot.discountCode } : {}),
           });
           if (!active) return;

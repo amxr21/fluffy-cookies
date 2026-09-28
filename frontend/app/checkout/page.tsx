@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Container } from "@/components/ui/Container";
@@ -75,7 +75,7 @@ export default function CheckoutPage() {
   const router = useRouter();
   const toast = useToast();
   const { lines, clearCart } = useCart();
-  const { user } = useAuth();
+  const { user, sessionExpired, expireSession } = useAuth();
 
   const [form, setForm] = useState({
     name: "",
@@ -93,7 +93,9 @@ export default function CheckoutPage() {
   const [discountCode, setDiscountCode] = useState("");
   const { zones, error: zonesError, loading: zonesLoading, refresh: refreshZones } = useDeliveryZones();
   const selectedZone = zones.find(zone => zone.id === form.emirate);
-  const { quote, error: pricingError, loading: pricingLoading, refresh: refreshQuote } = useCheckoutQuote(lines, discountCode, user?.userId, fulfillment, form.emirate);
+  const { quote, error: pricingError, loading: pricingLoading, refresh: refreshQuote, sessionExpired: quoteSessionExpired } = useCheckoutQuote(lines, discountCode, user?.userId, fulfillment, form.emirate);
+  // Signing out changes the quote's account, so it re-prices as a guest.
+  useEffect(() => { if (quoteSessionExpired) expireSession(); }, [quoteSessionExpired, expireSession]);
   /** Field errors shown inline. Populated on submit, cleared as the user types. */
   const [errors, setErrors] = useState<Partial<Record<FormField, string>>>({});
   /**
@@ -170,6 +172,12 @@ export default function CheckoutPage() {
     }
     const res = await dashboardPost<{ orderNumber: string; total: string }>("/orders", body, { "Idempotency-Key": idempotencyKey.current });
     setSubmitting(false);
+    if (!res.ok && res.status === 401 && user) {
+      // Refused before anything was stored, so the same key is safe to reuse.
+      expireSession();
+      toast.error("Your sign-in expired and the order wasn't placed. Please place it again as a guest.");
+      return;
+    }
     if (!res.ok) {
       toast.error(res.error.message || "Couldn't place your order");
       return;
@@ -342,6 +350,7 @@ export default function CheckoutPage() {
 
             {fulfillment === "Delivery" && quote && <div className="flex items-center justify-between text-small text-navy/80"><span>Delivery{quote.deliveryZoneName ? ` · ${quote.deliveryZoneName}` : ""}</span><span>{decimalToMinor(quote.deliveryFee) === 0 ? "Free" : formatMinor(decimalToMinor(quote.deliveryFee))}</span></div>}
             {zonesError && <div className="space-y-2"><p role="alert" className="text-small text-brown">{zonesError}</p><Button type="button" variant="outline" onClick={refreshZones}>Retry store details</Button></div>}
+            {sessionExpired && <p role="status" className="text-small text-brown">Your sign-in expired, so this order will be placed as a guest. Sign in again to link it to your account.</p>}
             {priceChanged && <p role="status" className="text-small text-brown">Prices have changed since you added items. The summary shows current prices.</p>}
             {pricingError && <div className="space-y-2"><p role="alert" className="text-small text-brown">{pricingError}</p><Button type="button" variant="outline" onClick={refreshQuote}>Retry pricing</Button></div>}
 

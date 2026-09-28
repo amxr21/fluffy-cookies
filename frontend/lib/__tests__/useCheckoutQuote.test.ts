@@ -46,6 +46,18 @@ describe("current checkout quote", () => {
     await tick();
     expect(result.current.quote?.total).toBe("48.00");
   });
+  it("reports a signed-in shopper's 401 as an expired session, but a guest's as an error", async () => {
+    const refused = { ok: false, status: 401, error: { message: "Invalid or expired session" } };
+    post.mockResolvedValue(refused);
+    const signedIn = renderHook(() => useCheckoutQuote([line], "", "c1"));
+    await tick();
+    expect(signedIn.result.current.sessionExpired).toBe(true);
+    expect(signedIn.result.current.error).toBeNull();
+    const guest = renderHook(() => useCheckoutQuote([line], ""));
+    await tick();
+    expect(guest.result.current.sessionExpired).toBe(false);
+    expect(guest.result.current.error).toBe("Invalid or expired session");
+  });
   it("invalidates a delivery price when the area or fulfillment changes", async () => {
     post.mockResolvedValue(success);
     const { result, rerender } = renderHook(({ zone, fulfillment }) => useCheckoutQuote([line], "", undefined, fulfillment, zone), { initialProps: { zone: "z1", fulfillment: "Delivery" } });

@@ -34,6 +34,9 @@ type AuthContextValue = {
   hydrated: boolean;
   login: (user: AuthUser) => void;
   logout: () => Promise<void>;
+  /** True once the dashboard has refused this tab's session, until sign-in. */
+  sessionExpired: boolean;
+  expireSession: () => void;
 };
 
 const AuthContext = createContext<AuthContextValue>({
@@ -42,6 +45,8 @@ const AuthContext = createContext<AuthContextValue>({
   hydrated: false,
   login: () => {},
   logout: async () => {},
+  sessionExpired: false,
+  expireSession: () => {},
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -65,8 +70,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => { active = false; };
   }, []);
 
+  const [sessionExpired, setSessionExpired] = useState(false);
+
   const login = useCallback((next: AuthUser) => {
     setUser(next);
+    setSessionExpired(false);
   }, []);
 
   const logout = useCallback(async () => {
@@ -76,9 +84,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   }, []);
 
+  /** The dashboard answered 401 for a signed-in shopper. The bridge has
+   *  already cleared the cookies; this only stops the page acting signed in. */
+  const expireSession = useCallback(() => {
+    setUser(null);
+    setSessionExpired(true);
+  }, []);
+
   const value = useMemo(
-    () => ({ user, isAuthenticated: !!user, hydrated, login, logout }),
-    [user, hydrated, login, logout]
+    () => ({ user, isAuthenticated: !!user, hydrated, login, logout, sessionExpired, expireSession }),
+    [user, hydrated, login, logout, sessionExpired, expireSession]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

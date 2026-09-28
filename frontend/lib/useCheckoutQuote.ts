@@ -24,7 +24,7 @@ export function useCheckoutQuote(lines: CartLine[], discountCode: string, custom
           });
           if (!active) return;
           // A 401 for a signed-in shopper is their session expiring, not a
-          // pricing failure: the caller signs them out and re-quotes as a guest.
+          // pricing failure: the caller signs them out and asks them to sign in again.
           // For a guest a 401 is a real misconfiguration and stays an error.
           if (!response.ok && response.status === 401 && snapshot.customerId) setResult({ key, quote: null, error: null, sessionExpired: true });
           else if (!response.ok) setResult({ key, quote: null, error: response.error.message });

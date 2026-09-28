@@ -25,11 +25,10 @@ declare global {
 }
 
 export function GoogleLoginButton() {
-  const { user, login, logout } = useAuth();
+  const { user, login, logout, signInOpen, setSignInOpen } = useAuth();
   const toast = useToast();
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [signInOpen, setSignInOpen] = useState(false);
   const [avatarFailed, setAvatarFailed] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -64,7 +63,7 @@ export function GoogleLoginButton() {
       if (previousFocus?.isConnected) previousFocus.focus();
       else if (trigger?.isConnected) trigger.focus();
     };
-  }, [signInOpen]);
+  }, [signInOpen, setSignInOpen]);
 
   // close account menu on outside click
   useEffect(() => {

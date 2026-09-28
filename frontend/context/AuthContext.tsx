@@ -37,6 +37,10 @@ type AuthContextValue = {
   /** True once the dashboard has refused this tab's session, until sign-in. */
   sessionExpired: boolean;
   expireSession: () => void;
+  /** The sign-in dialog GoogleLoginButton renders. Held here so a page can
+   *  ask for sign-in itself, as checkout does after an expired session. */
+  signInOpen: boolean;
+  setSignInOpen: (open: boolean) => void;
 };
 
 const AuthContext = createContext<AuthContextValue>({
@@ -47,6 +51,8 @@ const AuthContext = createContext<AuthContextValue>({
   logout: async () => {},
   sessionExpired: false,
   expireSession: () => {},
+  signInOpen: false,
+  setSignInOpen: () => {},
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -71,6 +77,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [signInOpen, setSignInOpen] = useState(false);
 
   const login = useCallback((next: AuthUser) => {
     setUser(next);
@@ -82,18 +89,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const result = await dashboardPost<{ success: boolean }>("/auth/logout", {});
     if (!result.ok) throw new Error(result.error.message);
     setUser(null);
+    setSessionExpired(false);
   }, []);
 
   /** The dashboard answered 401 for a signed-in shopper. The bridge has
-   *  already cleared the cookies; this only stops the page acting signed in. */
+   *  already cleared the cookies; this signs the page out too, so it asks
+   *  them to sign in again. Their cart is saved to their account, and it
+   *  comes back when they do. */
   const expireSession = useCallback(() => {
     setUser(null);
     setSessionExpired(true);
   }, []);
 
   const value = useMemo(
-    () => ({ user, isAuthenticated: !!user, hydrated, login, logout, sessionExpired, expireSession }),
-    [user, hydrated, login, logout, sessionExpired, expireSession]
+    () => ({ user, isAuthenticated: !!user, hydrated, login, logout, sessionExpired, expireSession, signInOpen, setSignInOpen }),
+    [user, hydrated, login, logout, sessionExpired, expireSession, signInOpen]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -75,7 +75,7 @@ export default function CheckoutPage() {
   const router = useRouter();
   const toast = useToast();
   const { lines, clearCart } = useCart();
-  const { user, sessionExpired, expireSession } = useAuth();
+  const { user, sessionExpired, expireSession, setSignInOpen } = useAuth();
 
   const [form, setForm] = useState({
     name: "",
@@ -94,7 +94,7 @@ export default function CheckoutPage() {
   const { zones, error: zonesError, loading: zonesLoading, refresh: refreshZones } = useDeliveryZones();
   const selectedZone = zones.find(zone => zone.id === form.emirate);
   const { quote, error: pricingError, loading: pricingLoading, refresh: refreshQuote, sessionExpired: quoteSessionExpired } = useCheckoutQuote(lines, discountCode, user?.userId, fulfillment, form.emirate);
-  // Signing out changes the quote's account, so it re-prices as a guest.
+  // The session is gone: sign the page out so it asks for sign-in again.
   useEffect(() => { if (quoteSessionExpired) expireSession(); }, [quoteSessionExpired, expireSession]);
   /** Field errors shown inline. Populated on submit, cleared as the user types. */
   const [errors, setErrors] = useState<Partial<Record<FormField, string>>>({});
@@ -120,6 +120,11 @@ export default function CheckoutPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Their cart is on their account; ordering waits until they sign back in.
+    if (sessionExpired) {
+      setSignInOpen(true);
+      return;
+    }
     if (lines.length === 0) {
       toast.info("Your cart is empty");
       return;
@@ -175,7 +180,7 @@ export default function CheckoutPage() {
     if (!res.ok && res.status === 401 && user) {
       // Refused before anything was stored, so the same key is safe to reuse.
       expireSession();
-      toast.error("Your sign-in expired and the order wasn't placed. Please place it again as a guest.");
+      toast.error("Your sign-in expired, so the order wasn't placed. Sign in again to finish — your cart is saved to your account.");
       return;
     }
     if (!res.ok) {
@@ -350,7 +355,7 @@ export default function CheckoutPage() {
 
             {fulfillment === "Delivery" && quote && <div className="flex items-center justify-between text-small text-navy/80"><span>Delivery{quote.deliveryZoneName ? ` · ${quote.deliveryZoneName}` : ""}</span><span>{decimalToMinor(quote.deliveryFee) === 0 ? "Free" : formatMinor(decimalToMinor(quote.deliveryFee))}</span></div>}
             {zonesError && <div className="space-y-2"><p role="alert" className="text-small text-brown">{zonesError}</p><Button type="button" variant="outline" onClick={refreshZones}>Retry store details</Button></div>}
-            {sessionExpired && <p role="status" className="text-small text-brown">Your sign-in expired, so this order will be placed as a guest. Sign in again to link it to your account.</p>}
+            {sessionExpired && <div className="space-y-2"><p role="status" className="text-small text-brown">Your sign-in expired. Sign in again to finish your order — your cart is saved to your account.</p><Button type="button" variant="outline" onClick={() => setSignInOpen(true)}>Sign in again</Button></div>}
             {priceChanged && <p role="status" className="text-small text-brown">Prices have changed since you added items. The summary shows current prices.</p>}
             {pricingError && <div className="space-y-2"><p role="alert" className="text-small text-brown">{pricingError}</p><Button type="button" variant="outline" onClick={refreshQuote}>Retry pricing</Button></div>}
 
@@ -361,7 +366,7 @@ export default function CheckoutPage() {
               </span>
             </div>
 
-            <Button type="submit" fullWidth disabled={submitting || !quote || pricingLoading || Boolean(pricingError) || zonesLoading || Boolean(zonesError) || (fulfillment === "Delivery" && !selectedZone) || lines.length === 0}>
+            <Button type="submit" fullWidth disabled={submitting || sessionExpired || !quote || pricingLoading || Boolean(pricingError) || zonesLoading || Boolean(zonesError) || (fulfillment === "Delivery" && !selectedZone) || lines.length === 0}>
               {submitting ? "Placing order…" : "Place Order"}
             </Button>
           </div>

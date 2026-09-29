@@ -1,6 +1,5 @@
 packages:
   - 'frontend'
-  - 'backend'
 
 # ─── Supply-chain: minimum release age ──────────────────────────────────────
 # Refuse to install any package published less than this many minutes ago.

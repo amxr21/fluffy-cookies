@@ -25,9 +25,8 @@ export type Order = {
 /*  Order progress phases                                              */
 /* ------------------------------------------------------------------ */
 
-/** The phases an order moves through, in order. The backend currently only
- *  ever sets "pending" (see backend/repo.file.js), so everything past the
- *  first phase renders as upcoming until the admin side can advance it. */
+/** The phases an order moves through, in order. `getOrderProgress` maps the
+ *  dashboard's order statuses onto them. */
 export const ORDER_PHASES = [
   {
     id: "pending",

@@ -4,20 +4,21 @@ import { FiArrowRight } from "react-icons/fi";
 import { Container } from "@/components/ui/Container";
 import { ProductCard } from "@/components/ui/ProductCard";
 import { Reveal } from "@/components/ui/Reveal";
-import { COLLECTION } from "@/lib/products";
-import { DASHBOARD_MODE } from "@/lib/config";
 import { getMenu } from "@/lib/catalogue";
 
 export async function DiscoverSection() {
-  const featured = DASHBOARD_MODE
-    ? (await getMenu()).categories.flatMap((category) => category.items).slice(0, 4).map((item) => ({
-        id: item.id,
-        name: item.name,
-        description: item.description,
-        image: item.image,
-        href: `/menu/${item.id}`,
-      }))
-    : COLLECTION;
+  // The first four products the dashboard sells — never a hard-coded list,
+  // which would link to items the dashboard may not have.
+  const featured = (await getMenu()).categories
+    .flatMap((category) => category.items)
+    .slice(0, 4)
+    .map((item) => ({
+      id: item.id,
+      name: item.name,
+      description: item.description,
+      image: item.image,
+      href: `/menu/${item.id}`,
+    }));
   return (
     <section>
       <Container className="py-16 md:px-32 md:py-24">

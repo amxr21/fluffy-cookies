@@ -9,8 +9,6 @@ import { Input, Textarea } from "@/components/ui/Field";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { useToast } from "@/components/providers/ToastProvider";
 import { useCart } from "@/context/CartContext";
-import { postJSON } from "@/lib/safeFetch";
-import { AUTH_KEYS, DASHBOARD_MODE } from "@/lib/config";
 import { dashboardGet, dashboardPost } from "@/lib/dashboard";
 import { formatMinor, lineTotalMinor } from "@/lib/money";
 
@@ -24,8 +22,8 @@ const PAYMENT_OPTIONS = [
   { value: "online", label: "Pay Online", disabled: true, note: "Coming soon" },
 ];
 
-/** Emirates Fluffy delivers to. Mirrors backend/lib/shipping.js — the server
- *  re-resolves the zone and price, so this list is for choosing, not pricing. */
+/** Emirates Fluffy delivers to. For choosing only — the dashboard prices the
+ *  order, so nothing here decides what is charged. */
 const EMIRATE_OPTIONS = [
   { value: "Al Ain", label: "Al Ain" },
   { value: "Abu Dhabi", label: "Abu Dhabi" },
@@ -99,19 +97,8 @@ export default function CheckoutPage() {
   });
   const [fulfillment, setFulfillment] = useState("Pickup");
   const [payment, setPayment] = useState<PaymentMethod>("cash");
-  const [discount, setDiscount] = useState("");
-  /**
-   * What the server says the code is worth. Never computed client-side: the
-   * total shown must be the total charged, and only the server knows the rules.
-   */
-  const [applied, setApplied] = useState<{
-    code: string;
-    discountMinor: number;
-  } | null>(null);
-  const [discountMessage, setDiscountMessage] = useState<string | null>(null);
-  const [checkingCode, setCheckingCode] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [taxRatePercent, setTaxRatePercent] = useState<number | null>(DASHBOARD_MODE ? null : 0);
+  const [taxRatePercent, setTaxRatePercent] = useState<number | null>(null);
   const [configError, setConfigError] = useState(false);
   /** Field errors shown inline. Populated on submit, cleared as the user types. */
   const [errors, setErrors] = useState<Partial<Record<FormField, string>>>({});
@@ -123,7 +110,6 @@ export default function CheckoutPage() {
   const idempotencyKey = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!DASHBOARD_MODE) return;
     let active = true;
     void dashboardGet<{ currency: string; taxRatePercent: number; storeName: string }>("/config").then((result) => {
       if (!active) return;
@@ -135,45 +121,10 @@ export default function CheckoutPage() {
     return () => { active = false; };
   }, []);
 
-  const taxMinor = DASHBOARD_MODE && taxRatePercent !== null
+  const taxMinor = taxRatePercent !== null
     ? Math.round(subtotalMinor * taxRatePercent / 100)
     : 0;
-  const totalMinor = DASHBOARD_MODE
-    ? subtotalMinor + taxMinor
-    : subtotalMinor - (applied?.discountMinor ?? 0);
-
-  /** Ask the server what the code is worth. Checking never spends a use. */
-  const applyDiscount = async () => {
-    if (DASHBOARD_MODE) return;
-    const code = discount.trim();
-    if (!code) return;
-
-    setCheckingCode(true);
-    const res = await postJSON<{
-      valid: boolean;
-      code?: string;
-      discountMinor?: number;
-      message?: string;
-    }>("/orders/discount/check", { code, subtotal_minor: subtotalMinor });
-    setCheckingCode(false);
-
-    if (!res.ok) {
-      setApplied(null);
-      setDiscountMessage(res.error.message);
-      return;
-    }
-    if (!res.data?.valid) {
-      setApplied(null);
-      setDiscountMessage(res.data?.message ?? "That code isn't valid.");
-      return;
-    }
-
-    setApplied({
-      code: res.data.code!,
-      discountMinor: res.data.discountMinor!,
-    });
-    setDiscountMessage(null);
-  };
+  const totalMinor = subtotalMinor + taxMinor;
 
   const set = (k: keyof typeof form, v: string) => {
     setForm((f) => ({ ...f, [k]: v }));
@@ -187,7 +138,7 @@ export default function CheckoutPage() {
       toast.info("Your cart is empty");
       return;
     }
-    if (DASHBOARD_MODE && (taxRatePercent === null || configError)) {
+    if (taxRatePercent === null || configError) {
       toast.error("Store pricing is unavailable. Please try again shortly.");
       return;
     }
@@ -216,60 +167,29 @@ export default function CheckoutPage() {
       idempotencyKey.current = crypto.randomUUID();
     }
 
-    if (DASHBOARD_MODE) {
-      const res = await dashboardPost<{ orderNumber: string; total: string }>("/orders", {
-        items: lines.map((line) => ({ productId: String(line.productId), quantity: line.quantity })),
-        contact: {
-          name: form.name.trim(),
-          phone: form.phone.trim(),
-          ...(form.email.trim() ? { email: form.email.trim() } : {}),
-          ...(fulfillment === "Delivery" ? {
-            address: `${form.address.trim()}, ${form.emirate.trim()}`,
-            city: form.city.trim(),
-          } : {}),
-          ...(form.note.trim() ? { note: form.note.trim() } : {}),
-        },
-        paymentMethod: payment,
-        fulfillment,
-      }, { "Idempotency-Key": idempotencyKey.current });
-      setSubmitting(false);
-      if (!res.ok) {
-        toast.error(res.error.message || "Couldn't place your order");
-        return;
-      }
-      idempotencyKey.current = null;
-      clearCart();
-      router.push(`/order-success?order=${encodeURIComponent(res.data.orderNumber)}`);
-      return;
-    }
-    const userId =
-      typeof window !== "undefined"
-        ? localStorage.getItem(AUTH_KEYS.userId)
-        : null;
-
-    const res = await postJSON<{ orderNumber: string }>(
-      "/orders",
-      {
-      user_id: userId,
-      fulfillment,
-      payment,
-      discount_code: applied?.code,
-      contact: form,
-      items: lines.map((l) => ({ product_id: l.productId, quantity: l.quantity })),
+    const res = await dashboardPost<{ orderNumber: string; total: string }>("/orders", {
+      items: lines.map((line) => ({ productId: String(line.productId), quantity: line.quantity })),
+      contact: {
+        name: form.name.trim(),
+        phone: form.phone.trim(),
+        ...(form.email.trim() ? { email: form.email.trim() } : {}),
+        ...(fulfillment === "Delivery" ? {
+          address: `${form.address.trim()}, ${form.emirate.trim()}`,
+          city: form.city.trim(),
+        } : {}),
+        ...(form.note.trim() ? { note: form.note.trim() } : {}),
       },
-      { headers: { "Idempotency-Key": idempotencyKey.current } }
-    );
+      paymentMethod: payment,
+      fulfillment,
+    }, { "Idempotency-Key": idempotencyKey.current });
     setSubmitting(false);
-
     if (!res.ok) {
       toast.error(res.error.message || "Couldn't place your order");
       return;
     }
-    // The order exists; a later checkout is a new attempt and needs a new key.
     idempotencyKey.current = null;
     clearCart();
-    const ref = res.data?.orderNumber ?? "";
-    router.push(`/order-success${ref ? `?order=${encodeURIComponent(ref)}` : ""}`);
+    router.push(`/order-success?order=${encodeURIComponent(res.data.orderNumber)}`);
   };
 
   return (
@@ -405,33 +325,6 @@ export default function CheckoutPage() {
               )}
             </ul>
 
-            {!DASHBOARD_MODE && <div className="flex items-end gap-2">
-              <Input
-                label="Discount code"
-                className="flex-1"
-                placeholder="e.g. FLUFFY10"
-                autoCapitalize="characters"
-                error={discountMessage ?? undefined}
-                hint={applied ? `${applied.code} applied` : undefined}
-                value={discount}
-                onChange={(e) => {
-                  setDiscount(e.target.value);
-                  // Editing invalidates what was applied — the total must never
-                  // show a discount for a code the field no longer holds.
-                  if (applied) setApplied(null);
-                  if (discountMessage) setDiscountMessage(null);
-                }}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                onClick={applyDiscount}
-                disabled={checkingCode || !discount.trim()}
-              >
-                {checkingCode ? "Checking…" : "Apply"}
-              </Button>
-            </div>}
-
             <div className="flex flex-col gap-1 text-small text-navy/80">
               <span>Payment method</span>
               <Dropdown
@@ -442,32 +335,23 @@ export default function CheckoutPage() {
               />
             </div>
 
-            {applied && (
-              <div className="flex items-center justify-between text-small text-navy/80">
-                <span>Discount ({applied.code})</span>
-                <span>-{formatMinor(applied.discountMinor)}</span>
-              </div>
-            )}
+            <div className="flex items-center justify-between text-small text-navy/80">
+              <span>VAT {taxRatePercent === null ? "" : `(${taxRatePercent}%)`}</span>
+              <span>{taxRatePercent === null ? "Loading…" : formatMinor(taxMinor)}</span>
+            </div>
 
-            {DASHBOARD_MODE && (
-              <div className="flex items-center justify-between text-small text-navy/80">
-                <span>VAT {taxRatePercent === null ? "" : `(${taxRatePercent}%)`}</span>
-                <span>{taxRatePercent === null ? "Loading…" : formatMinor(taxMinor)}</span>
-              </div>
-            )}
-
-            {DASHBOARD_MODE && configError && (
+            {configError && (
               <p role="alert" className="text-small text-brown">Store pricing is unavailable. Refresh before placing an order.</p>
             )}
 
             <div className="flex items-center justify-between border-t border-navy/20 pt-4">
               <span className="text-h4 font-bold text-navy">Total</span>
               <span className="text-h4 font-bold text-navy">
-                {DASHBOARD_MODE && taxRatePercent === null ? "Loading…" : formatMinor(totalMinor)}
+                {taxRatePercent === null ? "Loading…" : formatMinor(totalMinor)}
               </span>
             </div>
 
-            <Button type="submit" fullWidth disabled={submitting || (DASHBOARD_MODE && (taxRatePercent === null || configError))}>
+            <Button type="submit" fullWidth disabled={submitting || taxRatePercent === null || configError}>
               {submitting ? "Placing order…" : "Place Order"}
             </Button>
           </div>

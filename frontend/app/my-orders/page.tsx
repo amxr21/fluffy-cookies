@@ -7,16 +7,14 @@ import { StatusState } from "@/components/ui/StatusState";
 import { SkeletonGroup, SkeletonRow } from "@/components/ui/Skeleton";
 import { OrderCard } from "@/components/order/OrderCard";
 import { useAuth } from "@/context/AuthContext";
-import { getJSON, type Paginated } from "@/lib/safeFetch";
 import type { Order } from "@/lib/orders";
-import { DASHBOARD_MODE } from "@/lib/config";
 import { dashboardGet, dashboardOrderToOrder, type DashboardOrder } from "@/lib/dashboard";
 
 export default function MyOrdersPage() {
   const { user } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [state, setState] = useState<
-    "loading" | "ready" | "error" | "forbidden"
+    "loading" | "ready" | "error"
   >("loading");
 
   useEffect(() => {
@@ -24,26 +22,12 @@ export default function MyOrdersPage() {
     if (!user) return;
     let active = true;
     (async () => {
-      if (DASHBOARD_MODE) {
-        const res = await dashboardGet<DashboardOrder[]>("/orders");
-        if (!active) return;
-        if (res.ok) {
-          try { setOrders(res.data.map(dashboardOrderToOrder)); setState("ready"); }
-          catch { setState("error"); }
-        } else setState("error");
-        return;
-      }
-      const res = await getJSON<Paginated<Order>>(`/orders/user/${user.userId}`);
+      const res = await dashboardGet<DashboardOrder[]>("/orders");
       if (!active) return;
-      if (res.ok && Array.isArray(res.data?.data)) {
-        setOrders(res.data.data);
-        setState("ready");
-      } else if (res.status === 403) {
-        // Someone else's id in the URL. A different answer from "it broke".
-        setState("forbidden");
-      } else {
-        setState("error");
-      }
+      if (res.ok) {
+        try { setOrders(res.data.map(dashboardOrderToOrder)); setState("ready"); }
+        catch { setState("error"); }
+      } else setState("error");
     })();
     return () => {
       active = false;
@@ -68,13 +52,6 @@ export default function MyOrdersPage() {
             <SkeletonRow />
             <SkeletonRow />
           </SkeletonGroup>
-        ) : state === "forbidden" ? (
-          <StatusState
-            variant="unauthorized"
-            title="That's not your account"
-            message="You can only see your own orders."
-            cta={{ label: "Back home", href: "/" }}
-          />
         ) : state === "error" ? (
           <StatusState
             variant="error"

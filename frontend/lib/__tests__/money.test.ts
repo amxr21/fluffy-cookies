@@ -9,7 +9,7 @@ import {
 } from "@/lib/money";
 
 /**
- * Client-side money. Must agree with backend/lib/money.js — a total the
+ * Client-side money. Must agree with what the dashboard charges — a total the
  * customer sees that disagrees with what the server charges is worse than
  * either being wrong on its own.
  */

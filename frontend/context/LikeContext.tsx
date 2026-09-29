@@ -11,16 +11,12 @@ import {
 
 import { useToast } from "@/components/providers/ToastProvider";
 import { useAuth } from "@/context/AuthContext";
-import { getJSON, postJSON, type Paginated } from "@/lib/safeFetch";
-import { DASHBOARD_MODE } from "@/lib/config";
 import { dashboardGet, dashboardPost, type DashboardProduct } from "@/lib/dashboard";
 
 /**
  * Wishlist state.
  *
- * `POST /likes` has always existed and `/liked` has always read the list — but
- * nothing in the UI could ever write one, so the page was empty by
- * construction. This is the missing half.
+ * The dashboard's wishlist toggles on `POST /wishlist`; `/liked` reads it.
  *
  * Optimistic, with rollback: a heart that waits for a round trip feels broken,
  * and one that lies when the request fails is worse. The standard permits
@@ -41,8 +37,6 @@ const LikeContext = createContext<LikeContextValue>({
   hydrated: false,
 });
 
-type LikedProduct = { id?: number | string; productId?: number };
-
 export function LikeProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const toast = useToast();
@@ -60,28 +54,10 @@ export function LikeProvider({ children }: { children: React.ReactNode }) {
 
     let active = true;
     (async () => {
-      if (DASHBOARD_MODE) {
-        const res = await dashboardGet<DashboardProduct[]>("/wishlist");
-        if (!active) return;
-        if (res.ok) setLikedIds(new Set(res.data.map((product) => product.id)));
-        else toast.error(res.error.message);
-        setHydrated(true);
-        return;
-      }
-      const res = await getJSON<Paginated<LikedProduct>>(
-        `/likes/${user.userId}?limit=100`
-      );
+      const res = await dashboardGet<DashboardProduct[]>("/wishlist");
       if (!active) return;
-
-      if (res.ok && Array.isArray(res.data?.data)) {
-        setLikedIds(
-          new Set(
-            res.data.data
-              .map((p) => String(p.productId ?? p.id))
-              .filter((id) => id !== "undefined")
-          )
-        );
-      }
+      if (res.ok) setLikedIds(new Set(res.data.map((product) => product.id)));
+      else toast.error(res.error.message);
       setHydrated(true);
     })();
 
@@ -111,9 +87,7 @@ export function LikeProvider({ children }: { children: React.ReactNode }) {
         return next;
       });
 
-      const res = DASHBOARD_MODE
-        ? await dashboardPost<{ liked: boolean }>("/wishlist", { productId: key })
-        : await postJSON("/likes", { product_id: productId });
+      const res = await dashboardPost<{ liked: boolean }>("/wishlist", { productId: key });
 
       if (!res.ok) {
         // Roll back to exactly what it was, rather than toggling again — a

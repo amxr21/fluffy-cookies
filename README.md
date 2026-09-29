@@ -3,42 +3,44 @@
 Handcrafted cookies and sweet specialty coffees — freshly made every day for
 pickup or events. Al Ain, UAE.
 
-This repository contains two packages:
+This repository is the storefront. Everything commercial — the menu, stock,
+customers, carts, favourites and orders — lives in the **admin dashboard**, a
+separate product; the storefront reaches it only through its own same-origin
+bridge at `/api/storefront`.
 
 | Package | Stack |
 |---|---|
 | `frontend/` | Next.js · TypeScript · Tailwind CSS · GSAP |
-| `backend/` | Node.js · Express · MySQL |
 
 ## Getting started
 
-### Frontend
 ```bash
-cd frontend
 pnpm install
-cp .env.example .env.local   # then fill in the values
-pnpm dev                     # http://localhost:3000
+cp frontend/.env.example frontend/.env.local   # then fill in the values
+pnpm dev                                       # http://localhost:3000
 ```
 
-### Backend
-```bash
-cd backend
-pnpm install
-cp .env.example .env         # then fill in the values
-pnpm migrate                 # create database tables
-pnpm seed                    # load the menu
-pnpm dev                     # http://localhost:4000
-```
+The storefront needs a running dashboard backend to show a menu. Point
+`API_ORIGIN` at it and set `DASHBOARD_API_KEY` to an integration key from the
+dashboard's API keys page. Without them the menu shows as unavailable.
 
-> The backend can run without a database for development/testing by setting
-> `USE_FILE_DATA=true`.
+Fluffy's menu is loaded into the dashboard with
+`scripts/seed-dashboard-menu.sql` (run against the dashboard's database).
+
+## Checks
+
+```bash
+pnpm lint
+pnpm typecheck
+pnpm test                                   # unit tests
+pnpm build && pnpm --filter ./frontend test:e2e   # smoke suite, mock dashboard
+```
 
 ## Environment
 
-- **Frontend** needs the backend URL and a Google client ID (see
-  `frontend/.env.example`).
-- **Backend** needs MySQL credentials, a Google client ID, and a JWT secret (see
-  `backend/.env.example`).
+See `frontend/.env.example`. `API_ORIGIN` and `DASHBOARD_API_KEY` are
+server-only and read at request time; `NEXT_PUBLIC_*` values are fixed at build
+time, so changing one means a rebuild.
 
 ## License
 

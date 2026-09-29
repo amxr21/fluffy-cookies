@@ -16,8 +16,8 @@ import { safeFetch } from "@/lib/safeFetch";
 const ORIGINAL_FETCH = globalThis.fetch;
 
 beforeEach(() => {
-  // safeFetch reads the bearer token from localStorage; jsdom gives us a real
-  // one, so clear it rather than mocking the module.
+  // Guards the old-build regression below: a stale token in localStorage must
+  // never be sent. jsdom gives us a real storage, so clear it between tests.
   localStorage.clear();
 });
 
@@ -128,6 +128,27 @@ describe("safeFetch", () => {
     const init = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock
       .calls[0][1] as RequestInit;
     expect(new Headers(init.headers).get("Authorization")).toBeNull();
+  });
+
+  it("calls the same-origin dashboard bridge by default", async () => {
+    mockFetch(200, JSON.stringify({ data: {} }));
+
+    await safeFetch("/config");
+
+    const [url] = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe("/api/storefront/config");
+  });
+
+  it("returns a 401 as-is, with no refresh-and-replay (the dashboard has no refresh endpoint)", async () => {
+    mockFetch(401, JSON.stringify({ error: { code: "UNAUTHORIZED", message: "Please sign in to continue" } }));
+
+    const res = await safeFetch("/cart");
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(res.ok).toBe(false);
+    if (res.ok) throw new Error("expected a failure");
+    expect(res.status).toBe(401);
+    expect(res.error.code).toBe("UNAUTHORIZED");
   });
 });
 

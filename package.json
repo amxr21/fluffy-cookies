@@ -2,13 +2,13 @@
   "name": "fluffy-cookies",
   "version": "0.1.0",
   "private": true,
-  "description": "Fluffy — storefront (Next.js) + API (Express). Handcrafted cookies and specialty coffee, Al Ain, UAE.",
+  "description": "Fluffy — storefront (Next.js) for the admin dashboard. Handcrafted cookies and specialty coffee, Al Ain, UAE.",
   "engines": {
     "node": ">=22"
   },
   "packageManager": "pnpm@11.5.0",
   "scripts": {
-    "dev": "pnpm --parallel --filter \"./frontend\" --filter \"./backend\" dev",
+    "dev": "pnpm --filter \"./frontend\" dev",
     "build": "pnpm --filter \"./frontend\" build",
     "lint": "pnpm --recursive lint",
     "typecheck": "pnpm --recursive typecheck",

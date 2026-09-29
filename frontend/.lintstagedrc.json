@@ -1,4 +1,4 @@
 {
-  "*.{ts,tsx}": ["eslint --fix --max-warnings=0"],
+  "*.{ts,tsx}": ["pnpm --filter frontend exec eslint --fix --max-warnings=0"],
   "*.{json,css,md}": []
 }

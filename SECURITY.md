@@ -1,5 +1,10 @@
 # Fluffy — threat model and security posture
 
+> **Being rewritten.** This threat model was written for the retired Fluffy API
+> (`backend/`, removed). The storefront now reaches the admin dashboard only through
+> its `/api/storefront` bridge; the surfaces, tokens and twelve-attack review below
+> still need restating for that architecture.
+
 Per ECOMMERCE-STANDARD.md B10.0. Written for the specific store rather than as a
 generic checklist: a surface inventory catches the one that matters, a checklist
 usually does not.

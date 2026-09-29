@@ -8,9 +8,7 @@ import { Input } from "@/components/ui/Field";
 import { StatusState } from "@/components/ui/StatusState";
 import { OrderCard } from "@/components/order/OrderCard";
 import { OrderProgress } from "@/components/order/OrderProgress";
-import { getJSON } from "@/lib/safeFetch";
 import type { Order } from "@/lib/orders";
-import { DASHBOARD_MODE } from "@/lib/config";
 import { dashboardGet, dashboardOrderToOrder, type DashboardOrder } from "@/lib/dashboard";
 
 export default function TrackOrderPage() {
@@ -24,25 +22,14 @@ export default function TrackOrderPage() {
   const handleTrack = async (e: React.FormEvent) => {
     e.preventDefault();
     const ref = number.trim();
-    if (!ref || (DASHBOARD_MODE && !phone.trim())) return;
+    if (!ref || !phone.trim()) return;
     setState("loading");
-    if (DASHBOARD_MODE) {
-      const query = new URLSearchParams({ orderNumber: ref, phone: phone.trim() });
-      const result = await dashboardGet<DashboardOrder>(`/orders/track?${query}`);
-      if (result.ok) {
-        try { setOrder(dashboardOrderToOrder(result.data)); setState("found"); }
-        catch { setOrder(null); setState("notfound"); }
-      } else { setOrder(null); setState("notfound"); }
-      return;
-    }
-    const res = await getJSON<Order>(`/orders/track/${encodeURIComponent(ref)}`);
-    if (res.ok && res.data) {
-      setOrder(res.data);
-      setState("found");
-    } else {
-      setOrder(null);
-      setState("notfound");
-    }
+    const query = new URLSearchParams({ orderNumber: ref, phone: phone.trim() });
+    const result = await dashboardGet<DashboardOrder>(`/orders/track?${query}`);
+    if (result.ok) {
+      try { setOrder(dashboardOrderToOrder(result.data)); setState("found"); }
+      catch { setOrder(null); setState("notfound"); }
+    } else { setOrder(null); setState("notfound"); }
   };
 
   return (
@@ -52,7 +39,7 @@ export default function TrackOrderPage() {
           Track Your Order
         </h1>
         <p className="mb-8 text-center text-body text-navy/70">
-          Enter your order reference number{DASHBOARD_MODE ? " and the phone used at checkout" : ""} — no account needed.
+          Enter your order reference number and the phone used at checkout — no account needed.
         </p>
 
         <form
@@ -63,24 +50,22 @@ export default function TrackOrderPage() {
             label="Order number"
             required
             className="flex-1"
-            placeholder="e.g. FL3K92MTQ7"
+            placeholder="e.g. ORD-1045-VF5J74"
             autoCapitalize="characters"
-            hint="Starts with FL — it's on your confirmation email and receipt."
+            hint="It's on your order confirmation."
             error={state === "notfound" ? "We couldn't find that order." : undefined}
             value={number}
             onChange={(e) => setNumber(e.target.value)}
           />
-          {DASHBOARD_MODE && (
-            <Input
-              label="Checkout phone"
-              type="tel"
-              autoComplete="tel"
-              required
-              className="flex-1"
-              value={phone}
-              onChange={(event) => setPhone(event.target.value)}
-            />
-          )}
+          <Input
+            label="Checkout phone"
+            type="tel"
+            autoComplete="tel"
+            required
+            className="flex-1"
+            value={phone}
+            onChange={(event) => setPhone(event.target.value)}
+          />
           <Button type="submit" disabled={state === "loading"}>
             {state === "loading" ? "Tracking…" : "Track"}
           </Button>

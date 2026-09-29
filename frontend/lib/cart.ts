@@ -1,11 +1,10 @@
-/** Cart types + seed data. Will be replaced by CartContext (server-backed,
- *  optimistic) once the admin backend is wired — see STOREFRONT-TEMPLATE. */
+/** Cart types. State lives in context/CartContext.tsx. */
 
 export type CartLine = {
   /** Slug — stable key for UI state and localStorage. */
   id: string;
-  /** Numeric id the API expects on cart/order writes (see lib/menu.ts). */
-  productId: string | number;
+  /** The dashboard product id (see lib/menu.ts). */
+  productId: string;
   name: string;
   description: string;
   /** VAT-inclusive unit price in minor units (fils). */
@@ -16,36 +15,3 @@ export type CartLine = {
 };
 
 export type Fulfillment = "Pickup" | "Delivery";
-
-export const SEED_CART: CartLine[] = [
-  {
-    id: "iced-matcha-latte",
-    productId: 11,
-    name: "Iced Matcha Latte",
-    description: "earthy matcha with your choice of milk",
-    priceMinor: 5600,
-    currency: "AED",
-    quantity: 1,
-    image: "/images/drinkss/image 12.jpg",
-  },
-  {
-    id: "classic-chocolate-chip",
-    productId: 1,
-    name: "Classic Chocolate Chip",
-    description: "golden edges, gooey center, packed with chips",
-    priceMinor: 4800,
-    currency: "AED",
-    quantity: 3,
-    image: "/images/cookies/image 12.jpg",
-  },
-  {
-    id: "double-chocolate-fudge",
-    productId: 2,
-    name: "Double Chocolate Fudge",
-    description: "rich, soft, dark & milk chocolate mix",
-    priceMinor: 4000,
-    currency: "AED",
-    quantity: 2,
-    image: "/images/cookies/image 13.jpg",
-  },
-];

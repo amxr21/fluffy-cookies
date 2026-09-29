@@ -7,26 +7,14 @@ import { MenuCard } from "@/components/ui/MenuCard";
 import { StatusState } from "@/components/ui/StatusState";
 import { SkeletonCard, SkeletonGroup } from "@/components/ui/Skeleton";
 import { useAuth } from "@/context/AuthContext";
-import { getJSON, type Paginated } from "@/lib/safeFetch";
 import type { MenuItem } from "@/lib/menu";
-import { DASHBOARD_MODE } from "@/lib/config";
 import { dashboardGet, dashboardProductToMenuItem, type DashboardProduct } from "@/lib/dashboard";
-
-/** A product row as `GET /likes/:id` returns it. */
-type ApiProduct = {
-  id: number;
-  slug?: string;
-  name: string;
-  description: string;
-  image: string;
-  price_minor: number;
-};
 
 export default function LikedPage() {
   const { user } = useAuth();
   const [items, setItems] = useState<MenuItem[]>([]);
   const [state, setState] = useState<
-    "loading" | "ready" | "error" | "forbidden"
+    "loading" | "ready" | "error"
   >("loading");
 
   useEffect(() => {
@@ -34,36 +22,12 @@ export default function LikedPage() {
     if (!user) return;
     let active = true;
     (async () => {
-      if (DASHBOARD_MODE) {
-        const res = await dashboardGet<DashboardProduct[]>("/wishlist");
-        if (!active) return;
-        if (res.ok) {
-          try { setItems(res.data.map(dashboardProductToMenuItem)); setState("ready"); }
-          catch { setState("error"); }
-        } else setState("error");
-        return;
-      }
-      const res = await getJSON<Paginated<ApiProduct>>(`/likes/${user.userId}`);
+      const res = await dashboardGet<DashboardProduct[]>("/wishlist");
       if (!active) return;
-      if (res.ok && Array.isArray(res.data?.data)) {
-        // The API returns product rows; the card wants MenuItem shape.
-        setItems(
-          res.data.data.map((p) => ({
-            id: p.slug ?? String(p.id),
-            productId: p.id,
-            name: p.name,
-            description: p.description,
-            image: p.image,
-            priceMinor: p.price_minor,
-          }))
-        );
-        setState("ready");
-      } else if (res.status === 403) {
-        // Someone else's id in the URL. A different answer from "it broke".
-        setState("forbidden");
-      } else {
-        setState("error");
-      }
+      if (res.ok) {
+        try { setItems(res.data.map(dashboardProductToMenuItem)); setState("ready"); }
+        catch { setState("error"); }
+      } else setState("error");
     })();
     return () => {
       active = false;
@@ -90,13 +54,6 @@ export default function LikedPage() {
             <SkeletonCard />
             <SkeletonCard />
           </SkeletonGroup>
-        ) : state === "forbidden" ? (
-          <StatusState
-            variant="unauthorized"
-            title="That's not your account"
-            message="You can only see your own liked items."
-            cta={{ label: "Back home", href: "/" }}
-          />
         ) : state === "error" ? (
           <StatusState
             variant="error"

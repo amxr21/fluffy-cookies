@@ -1,46 +1,15 @@
-/** Runtime config. The backend (DB + API) is provided later by a predefined
- *  admin template; point NEXT_PUBLIC_API_URL at it then. */
-
-/** Version prefix every API route lives under (backend/app.js mounts it). */
-export const API_VERSION = "v1";
-
-/** Select the dashboard's public commerce contract at build time. */
-export const DASHBOARD_MODE = process.env.NEXT_PUBLIC_DATA_SOURCE === "admin-dashboard";
-export const DASHBOARD_API_URL = "/api/storefront";
+/** Runtime config. Everything commercial — menu, cart, favourites, orders,
+ *  customers — lives in the admin dashboard; the storefront reaches it only
+ *  through its own same-origin bridge. */
 
 /**
- * Base for every API call.
+ * Base for every client-side API call: the bridge at app/api/storefront.
  *
- * Relative by default: next.config.ts rewrites /api/v1/* to the backend, so the
- * browser talks to this origin only. That is what lets auth cookies stay
- * SameSite=Lax — see the CSRF note in that file.
- *
- * NEXT_PUBLIC_API_URL still works as an override for a deploy that genuinely
- * needs to call the API cross-origin, but that combination also needs a CSRF
- * token layer, so it is not the default.
+ * Same-origin on purpose. The browser never learns the dashboard's address or
+ * its integration key, and the session cookie stays SameSite=Lax because it is
+ * never sent cross-site.
  */
-const RAW_API_URL = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
-
-export const API_URL = RAW_API_URL
-  ? RAW_API_URL.endsWith(`/api/${API_VERSION}`)
-    ? RAW_API_URL
-    : `${RAW_API_URL}/api/${API_VERSION}`
-  : `/api/${API_VERSION}`;
+export const DASHBOARD_API_URL = "/api/storefront";
 
 export const GOOGLE_CLIENT_ID =
   process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
-
-/**
- * localStorage keys for the lazy-auth session (see AuthContext).
- *
- * NOTE: `token` is gone. Auth tokens are httpOnly cookies now, unreadable by
- * script — that is the point. What remains is display data only (who is signed
- * in, for the account menu); none of it is trusted by the server, which reads
- * identity from the cookie.
- */
-export const AUTH_KEYS = {
-  userId: "fluffy_user_id",
-  userRole: "fluffy_user_role",
-  userName: "fluffy_user_name",
-  userPicture: "fluffy_user_picture",
-} as const;

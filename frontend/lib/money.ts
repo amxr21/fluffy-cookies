@@ -1,6 +1,7 @@
 /**
- * Money on the client. Mirrors backend/lib/money.js — amounts crossing the API
- * are integers in minor units (fils) with an explicit currency.
+ * Money on the client: integers in minor units (fils) with an explicit
+ * currency. The dashboard sends fixed-decimal strings ("48.00"), converted
+ * exactly by `decimalToMinor` in lib/dashboard.ts.
  *
  * Prices are VAT-inclusive: what is shown is what is charged. `vatPortion`
  * exists to itemise the VAT already contained in a total, never to add to it.

@@ -22,12 +22,12 @@ export default function OrderSuccessPage() {
 
           <h1 className="mt-8 text-h1 text-navy">Thanks for choosing Fluffy</h1>
           <p className="mt-2 text-h3 text-navy/80">
-            Your order will be ready for pickup soon.
+            Your order has been received.
           </p>
 
           <p className="mx-auto mt-6 max-w-2xl text-body-lg text-navy/80">
             We&apos;re preparing your treats fresh — just the way you love them.
-            You&apos;ll receive a notification once everything is ready.
+            Keep your reference number to follow your order&apos;s progress.
           </p>
 
           <SectionDivider className="mx-auto my-10" />

@@ -7,8 +7,8 @@
  * products. It also refuses any request without the integration key, which
  * doubles as a check that the bridge sends it.
  *
- * Deliberately dumb: no state, no validation beyond the key. Contract tests for
- * the real dashboard live in the admin-dashboard repo.
+ * Stateless pricing fixtures follow cart quantity and delivery selection.
+ * Contract tests for the real dashboard live in the admin-dashboard repo.
  */
 import http from "node:http";
 
@@ -49,13 +49,56 @@ const MENU = [
   },
 ];
 
+const ZONES = [
+  { id: "zoneAlAin", code: "AL_AIN", name: "Al Ain", fee: "15.00" },
+  { id: "zoneAbuDhabi", code: "ABU_DHABI", name: "Abu Dhabi", fee: "25.00" },
+  { id: "zoneDubai", code: "DUBAI", name: "Dubai", fee: "30.00" },
+  { id: "zoneSharjah", code: "SHARJAH", name: "Sharjah", fee: "30.00" },
+  { id: "zoneNorthern", code: "NORTHERN", name: "Northern Emirates", fee: "40.00" },
+].map((zone, sortOrder) => ({ ...zone, freeDeliveryThreshold: "150.00", isActive: true, sortOrder }));
+
+function pricing(body) {
+  if (body.discountCode && body.discountCode !== "TEN10") {
+    return [400, { error: { code: "BAD_REQUEST", message: "This promo code cannot be applied" } }];
+  }
+  const products = MENU.flatMap(category => category.items);
+  const lines = (body.items ?? []).map(item => {
+    const product = products.find(product => product.id === item.productId);
+    if (!product || !product.inStock) throw new Error("Unknown/unavailable mock product");
+    const quantity = Number(item.quantity);
+    return { productId: product.id, variantId: null, name: product.name, quantity, price: product.price, lineTotal: (Number(product.price) * quantity).toFixed(2) };
+  });
+  const subtotal = lines.reduce((sum, line) => sum + Math.round(Number(line.lineTotal) * 100), 0);
+  const discount = body.discountCode === "TEN10" ? Math.round(subtotal * 0.1) : 0;
+  const delivery = String(body.fulfillment ?? "Pickup").toUpperCase() === "DELIVERY";
+  const zone = delivery ? ZONES.find(zone => zone.id === body.deliveryZoneId) : null;
+  if (delivery && !zone) return [400, { error: { code: "BAD_REQUEST", message: "Choose a delivery area" } }];
+  const fee = zone && subtotal - discount < Math.round(Number(zone.freeDeliveryThreshold) * 100) ? Math.round(Number(zone.fee) * 100) : 0;
+  const total = subtotal - discount + fee;
+  const decimal = minor => (minor / 100).toFixed(2);
+  return [200, { data: {
+    lines, subtotal: decimal(subtotal), discountCode: body.discountCode || null,
+    discountAmount: decimal(discount), taxAmount: decimal(total - Math.round(total / 1.05)),
+    total: decimal(total), pricesIncludeTax: true, deliveryFee: decimal(fee),
+    deliveryZoneName: zone?.name ?? null,
+  } }];
+}
+
 const routes = {
   "GET /api/v1/public/branches": () => [200, { data: [{ id: "e2e_branch", name: "Main" }] }],
-  "GET /api/v1/public/config": () => [200, { data: { currency: "AED", taxRatePercent: 5, storeName: "Fluffy" } }],
+  "GET /api/v1/public/config": () => [200, { data: { currency: "AED", taxRatePercent: 5, pricesIncludeTax: true, storeName: "Fluffy" } }],
+  "GET /api/v1/public/delivery-zones": () => [200, { data: ZONES }],
   "GET /api/v1/public/products/menu": () => [200, { data: MENU }],
   "GET /api/v1/public/me": () => [401, { error: { code: "UNAUTHORIZED", message: "Please sign in to continue" } }],
   "GET /api/v1/public/orders/track": () => [404, { error: { code: "NOT_FOUND", message: "No order found with that reference and phone number" } }],
-  "POST /api/v1/public/orders": () => [201, { data: { orderNumber: "ORD-1001-E2E001", subtotal: "48.00", discountAmount: "0.00", taxAmount: "2.40", total: "50.40" } }],
+  "POST /api/v1/public/orders/quote": pricing,
+  "POST /api/v1/public/orders": body => {
+    const [status, response] = pricing(body);
+    if (status !== 200) return [status, response];
+    // Same fields as the real CheckoutResult: no lines, fulfillment or delivery.
+    const { subtotal, discountAmount, taxAmount, total } = response.data;
+    return [201, { data: { orderNumber: "ORD-1001-E2E001", subtotal, discountAmount, taxAmount, total } }];
+  },
 };
 
 http
@@ -70,9 +113,12 @@ http
     const { pathname } = new URL(req.url, "http://mock");
     const route = routes[`${req.method} ${pathname}`];
     if (!route) return send(404, { error: { code: "NOT_FOUND", message: `No mock for ${req.method} ${pathname}` } });
-    // Drain the body so POSTs complete cleanly.
-    req.resume();
-    req.on("end", () => send(...route()));
+    let body = "";
+    req.on("data", chunk => { body += chunk; });
+    req.on("end", () => {
+      try { send(...route(body ? JSON.parse(body) : {})); }
+      catch { send(400, { error: { code: "BAD_REQUEST", message: "Invalid JSON" } }); }
+    });
   })
   // No startup log: Playwright's webServer polls the URL to know it is up.
   .listen(PORT, "127.0.0.1");

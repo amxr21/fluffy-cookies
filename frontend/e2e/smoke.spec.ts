@@ -1,10 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 
 /**
- * Every public route renders in the production build, in dashboard mode.
+ * Every public route renders in the production build.
  *
  * What counts as broken here: a non-200 document, or an uncaught exception in
- * the page. Failed XHRs are not counted — a guest's `/me` is a 401 by design.
+ * the page. Failed XHRs are not counted — the mock does not serve every call.
  */
 const ROUTES = [
   "/",
@@ -70,19 +70,57 @@ test.describe("content", () => {
     await page.goto("/checkout", { waitUntil: "networkidle" });
     await expect(page.getByText("Classic Chocolate Chip").filter({ visible: true }).first()).toBeVisible();
     await expect(page.getByRole("button", { name: /place order/i })).toBeEnabled();
+    await expect(page.getByText("Includes VAT", { exact: true })).toBeVisible();
+    const summary = page.getByRole("heading", { name: "Order Summary", exact: true }).locator("..");
+    await expect(summary).toContainText(/Total\s*AED\s*48\.00/);
+    await page.getByLabel("Promo code").fill("INVALID");
+    await page.getByRole("button", { name: "Apply code", exact: true }).click();
+    await expect(page.getByRole("alert").filter({ hasText: "This promo code cannot be applied" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /place order/i })).toBeDisabled();
+    await page.getByRole("button", { name: "Remove code", exact: true }).click();
+    await expect(page.getByRole("button", { name: /place order/i })).toBeEnabled();
   });
+});
+
+test("browser checkout mutations pass the production Origin check", async ({ page }) => {
+  await page.goto("/checkout");
+  const status = await page.evaluate(async () => {
+    const response = await fetch("/api/storefront/orders", {
+      method: "POST",
+      headers: { "content-type": "application/json", "idempotency-key": "e2e-origin-check" },
+      body: JSON.stringify({ items: [{ productId: "p_classic-chocolate-chip", quantity: 1 }] }),
+    });
+    return response.status;
+  });
+  expect(status).toBe(201);
 });
 
 test.describe("at phone width", () => {
   test.use({ viewport: { width: 360, height: 780 } });
 
+  test("navbar targets are at least 44px and the closed sign-in dialog cannot take focus", async ({ page }) => {
+    await page.goto("/", { waitUntil: "networkidle" });
+    const signIn = page.getByRole("button", { name: "Sign in", exact: true });
+    for (const target of [signIn, page.getByRole("link", { name: /view cart/i }), page.getByRole("link", { name: /fluffy.*home/i })]) {
+      const box = await target.boundingBox();
+      expect(box?.width).toBeGreaterThanOrEqual(44);
+      expect(box?.height).toBeGreaterThanOrEqual(44);
+    }
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await signIn.focus();
+    await page.keyboard.press("Enter");
+    const close = page.getByRole("button", { name: "Close sign-in dialog" });
+    await expect(close).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(signIn).toBeFocused();
+    const hiddenClose = page.getByRole("button", { name: "Close sign-in dialog", includeHidden: true });
+    await hiddenClose.evaluate((element: HTMLElement) => element.focus());
+    await expect(hiddenClose).not.toBeFocused();
+  });
+
   for (const route of ROUTES) {
     test(`${route} does not scroll sideways`, async ({ page }) => {
-      // Known bug FX-09: the footer lays three columns side by side on mobile
-      // (Footer.tsx uses grid-cols classes on a flex container). test.fail()
-      // keeps CI green while it is open and turns red the moment it is fixed,
-      // so the fix PR must delete this line.
-      test.fail(true, "FX-09: footer overflows at 360px");
       await page.goto(route, { waitUntil: "networkidle" });
       const overflow = await page.evaluate(
         () => document.documentElement.scrollWidth - document.documentElement.clientWidth
@@ -91,3 +129,16 @@ test.describe("at phone width", () => {
     });
   }
 });
+
+// The footer and the story section's scroll reveal were the culprits at 360px;
+// the tablet and desktop grids get the same check so the fix cannot move the
+// overflow to another breakpoint.
+for (const width of [768, 1440]) {
+  test(`home and footer fit at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/", { waitUntil: "networkidle" });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+    await page.locator("footer").scrollIntoViewIfNeeded();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+  });
+}

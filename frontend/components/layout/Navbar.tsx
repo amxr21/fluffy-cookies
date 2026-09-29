@@ -20,7 +20,7 @@ export function Navbar() {
     <header className="fixed inset-x-4 top-4 mx-auto rounded-2xl border border-navy/10 bg-white/70 shadow-lg shadow-navy/5 backdrop-blur-md md:inset-x-16 md:top-6 z-50">
       <nav className="flex items-center justify-between px-4 py-3 sm:px-8 md:px-16">
         {/* Brand */}
-        <Link href="/" aria-label={`${SITE.name} — home`} className="shrink-0">
+        <Link href="/" aria-label={`${SITE.name} — home`} className="flex min-h-11 min-w-11 shrink-0 items-center">
           <Image
             src="/icons/logo.svg"
             alt={SITE.name}
@@ -32,9 +32,9 @@ export function Navbar() {
         </Link>
 
         {/* Links + cart — one group, pushed to the right */}
-        <div className="flex items-center gap-8">
+        <div className="flex items-center gap-3 sm:gap-8">
           {/* Links */}
-          <ul className="hidden items-center gap-8 md:flex">
+          <ul className="hidden items-center gap-8 lg:flex">
             {NAV_LINKS.map((link) => (
               <li key={link.href}>
                 <Link
@@ -54,7 +54,7 @@ export function Navbar() {
           <Link
             href="/cart"
             aria-label={`View cart${count ? `, ${count} items` : ""}`}
-            className="relative grid h-9 w-9 shrink-0 place-items-center rounded-xl p-2.5 ring-1 ring-navy/30 transition-colors hover:bg-navy/5"
+            className="relative grid size-11 shrink-0 place-items-center rounded-xl p-2.5 ring-1 ring-navy/30 transition-colors hover:bg-navy/5"
           >
             <Image src="/icons/cart.svg" alt="" width={18} height={20} className="h-full w-auto" />
             {count > 0 && (

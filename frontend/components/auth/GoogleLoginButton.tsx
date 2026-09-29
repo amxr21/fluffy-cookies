@@ -25,13 +25,45 @@ declare global {
 }
 
 export function GoogleLoginButton() {
-  const { user, login, logout } = useAuth();
+  const { user, login, logout, signInOpen, setSignInOpen } = useAuth();
   const toast = useToast();
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [signInOpen, setSignInOpen] = useState(false);
   const [avatarFailed, setAvatarFailed] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const signInRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!signInOpen) return;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const trigger = signInRef.current;
+    const dialog = dialogRef.current;
+    dialog?.querySelector<HTMLButtonElement>("button")?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setSignInOpen(false);
+      }
+      if (event.key !== "Tab" || !dialog) return;
+      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], iframe, [tabindex="0"]'));
+      const first = focusable[0];
+      const last = focusable.at(-1);
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      if (previousFocus?.isConnected) previousFocus.focus();
+      else if (trigger?.isConnected) trigger.focus();
+    };
+  }, [signInOpen, setSignInOpen]);
 
   // close account menu on outside click
   useEffect(() => {
@@ -136,7 +168,7 @@ export function GoogleLoginButton() {
           onClick={() => setMenuOpen((o) => !o)}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
-          className="group flex items-center gap-2"
+          className="group flex min-h-11 min-w-11 items-center justify-center gap-2"
         >
           <span className="relative grid size-9 place-items-center overflow-hidden rounded-xl bg-navy/10 text-small font-bold text-navy ring-2 ring-transparent transition-all group-hover:ring-navy/30">
             {hasPic ? (
@@ -157,6 +189,8 @@ export function GoogleLoginButton() {
 
         <div
           role="menu"
+          inert={!menuOpen}
+          aria-hidden={!menuOpen}
           className={cn(
             "absolute right-0 mt-2 w-52 origin-top-right overflow-hidden rounded-xl border border-navy/10 bg-white shadow-xl shadow-navy/10 transition-all duration-200",
             menuOpen
@@ -189,14 +223,17 @@ export function GoogleLoginButton() {
   return (
     <>
       <button
+        ref={signInRef}
         type="button"
         onClick={() => setSignInOpen(true)}
-        className="flex items-center gap-2 rounded-lg bg-navy px-4 py-2 text-small font-semibold text-white transition-all duration-200 hover:brightness-110 active:scale-95"
+        className="flex min-h-11 min-w-11 items-center gap-2 rounded-lg bg-navy px-4 py-2 text-small font-semibold text-white transition-all duration-200 hover:brightness-110 active:scale-95"
       >
         Sign in
       </button>
 
       <div
+        inert={!signInOpen}
+        aria-hidden={!signInOpen}
         className={cn(
           "fixed inset-0 z-[1000001] flex items-center justify-center p-4 transition-all duration-300",
           signInOpen ? "opacity-100" : "pointer-events-none opacity-0"
@@ -210,8 +247,10 @@ export function GoogleLoginButton() {
           onClick={() => setSignInOpen(false)}
         />
         <div
+          ref={dialogRef}
           role="dialog"
           aria-modal="true"
+          aria-labelledby="sign-in-title"
           className={cn(
             "relative flex w-full max-w-sm flex-col items-center gap-5 rounded-2xl bg-white p-8 text-center shadow-2xl transition-all duration-300",
             signInOpen ? "translate-y-0 scale-100" : "translate-y-2 scale-95"
@@ -221,11 +260,11 @@ export function GoogleLoginButton() {
             type="button"
             onClick={() => setSignInOpen(false)}
             aria-label="Close sign-in dialog"
-            className="absolute right-3 top-3 grid place-items-center rounded-lg p-1.5 text-navy/40 transition-colors hover:bg-navy/5 hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy"
+            className="absolute right-3 top-3 grid size-11 place-items-center rounded-lg p-1.5 text-navy/40 transition-colors hover:bg-navy/5 hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy"
           >
             <FiX aria-hidden className="size-4" />
           </button>
-          <h2 className="text-h3 font-bold text-navy">Welcome to Fluffy</h2>
+          <h2 id="sign-in-title" className="text-h3 font-bold text-navy">Welcome to Fluffy</h2>
           <p className="-mt-2 text-small text-navy/70">
             Sign in to save your cart, liked items, and track orders.
           </p>

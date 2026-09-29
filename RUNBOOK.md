@@ -1,133 +1,89 @@
-# Fluffy — runbook
+﻿# Fluffy runbook
 
-Written for whoever inherits this at 2am. Assumes no prior context.
+Production consists of the Fluffy Next.js storefront, the separate admin-dashboard
+API and admin UI, and MySQL, hosted on a Hostinger VPS through Coolify and Traefik.
+The retired Fluffy Express backend is not a deployment target.
+See [integration setup](HOW-TO-CONNECT-ADMIN-DASHBOARD.md) for exact app commands,
+ports, environment variables and migration startup behavior.
 
-**Frontend:** Next.js (Vercel) · **API:** Express (Render) · **Database:** MySQL
+## Establish which service failed
 
----
+Check the public storefront, /api/storefront/config, /menu, and the dashboard
+API's /api/v1/health. Check the health status and logs of each Coolify resource.
+The storefront can serve a briefly cached catalogue while the API is unavailable;
+sign-in, cart and checkout require the dashboard.
 
-## Is it broken?
-
-```bash
-curl https://api.fluffy.ae/health
-```
-
-| Response | Meaning |
+| Symptom | First check |
 |---|---|
-| `{"status":"ok","db":"up"}` | Healthy |
-| `{"status":"degraded","db":"down"}` | API is up, database is not — start at *Database down* |
-| No response / timeout | API is down — start at *API down* |
+| Storefront 502 or 503 | API health, server-only API_ORIGIN, integration key and selling branch |
+| Menu unavailable | Active categorized products, branch stock, DASHBOARD_BRANCH_ID and key scopes |
+| Mutations return 403 | Browser Origin, public storefront host and NEXT_PUBLIC_SITE_URL; rebuild after changing public env |
+| Many shoppers receive 429 together | Traefik client IP headers, bridge X-Storefront-Client-IP, and dashboard per-key/per-shopper budgets |
+| Sign-in fails | Matching Google client IDs and storefront authorized JavaScript origin |
+| Quote changes or rejects checkout | Current prices, stock, discount eligibility and selected delivery zone |
+| Orders are missing | Intended dashboard database/branch; search the returned order number |
+| Client reports disappear | /api/client-log caps reports at 8 KiB and rate limits by address/process; consult API logs too |
 
-The storefront can render its cached menu while the API is down. Sign-in,
-cart and checkout cannot work.
+Use Coolify application logs for the storefront and API. Dashboard requests use
+structured logging; correlate by request ID where available. Do not assume the
+bridge forwards every upstream diagnostic header. Never paste customer bodies,
+addresses, credentials or tokens into incident notes. The storefront's client-log
+sink is best-effort reporting, not durable monitoring.
 
-## Finding out what happened
+## API or database outage
 
-Every response carries `x-request-id`, and every error shown to a customer
-includes it. **That string is the fastest route to the cause.**
+1. Check recent deployments and crash-loop logs. Missing or invalid environment
+   configuration is a boot failure, not a catalogue defect.
+2. Check MySQL health, storage, connection capacity and the configured internal
+   hostname. Container IPs change; use the Coolify resource hostname.
+3. Confirm APP_MODE=prod and DATABASE_URL_PROD on the dashboard API. Update
+   that URL when credentials rotate; the storefront has no database credentials.
+4. If deployment introduced the outage, redeploy the last compatible commit
+   in Coolify. Preserve logs before restarting.
 
-```bash
-# The whole story of one request, in order
-grep '<requestId>' backend/logs/app-$(date +%F).log
-```
+## Rollback and restore
 
-Logs live in `backend/logs/`, rotating daily, kept 14 days. `app-*` is the
-application channel, `db-*` is query failures.
+Roll back app code through Coolify deployment history or redeploy a known commit.
+Dashboard startup applies Prisma migrations; code rollback does not reverse them.
+Review compatibility with the current schema before rolling back. Never use
+prisma migrate reset or db push against production.
 
-Unexpected errors also reach Sentry, tagged with the same `requestId`.
-**Expected failures — a 404, a rejected discount code — are deliberately not
-sent**, so the Sentry inbox stays readable.
+Restore backups into a separate database first. Verify recent order numbers,
+totals, tax/delivery snapshots, stock and discount usage. Record the backup age
+and restore duration, then change DATABASE_URL_PROD deliberately. Scheduled
+backups and a rehearsed restore are launch requirements; this document does not
+claim they have been configured or tested in production.
 
----
+## Pricing and fulfillment
 
-## API down
+The dashboard quote and checkout service owns prices, discounts, VAT and delivery
+fees. Fluffy uses 5% VAT-inclusive prices. Its approved delivery table is Al Ain
+AED 15, Abu Dhabi AED 25, Dubai/Sharjah AED 30, and Northern Emirates AED 40;
+delivery is free when the discounted merchandise subtotal reaches AED 150.
+Zones are generic dashboard records, with store.deliveryZonesEnabled enabled
+for Fluffy. Pickup carries no delivery fee. Apply reviewed seed/configuration SQL
+only to the intended database; a local QA seed is not production evidence.
 
-1. Check the host's dashboard for a crashed or restarting instance.
-2. Check the most recent deploy — if it correlates, **roll back first, diagnose after**.
-3. Look for a boot failure. The server exits immediately on missing config:
-   ```
-   Missing required environment variables: JWT_SECRET
-   ```
-   That is a config problem, not a code one. Check the host's env vars.
-   `JWT_SECRET` must be at least 32 characters or the process refuses to start.
+Orders reserve stock. Cancellation returns reserved stock and releases discount
+usage; fulfillment records outstanding cash payment on delivery/collection.
+Use supported cancellation/return workflows and preserve the audit trail; do not
+edit historical pricing snapshots or manually move orders backwards to repair disputes.
 
-## Database down
+## Credential rotation
 
-1. Confirm the database itself is up in its own dashboard.
-2. Check connection limits — `DB_CONNECTION_LIMIT` defaults to 10. Exhaustion
-   looks like slow requests before it looks like failures.
-3. Check `backend/logs/db-*.log` for the actual driver error.
-4. If credentials rotated, update `DB_PASSWORD` on the host and restart.
+Create a replacement STOREFRONT-audience key with required public scopes,
+update DASHBOARD_API_KEY in the storefront Coolify resource, verify catalogue
+and checkout, then revoke the old key. Never use a NEXT_PUBLIC_* variable.
+Dashboard JWT rotation invalidates affected sessions. API-key, reset-code and
+2FA encryption secrets have separate purposes; review their effect on stored
+credentials before rotation. Google client ID changes require coordinated API
+update and storefront rebuild. Keep MySQL inaccessible through the public firewall.
 
-## Rolling back
+## Incident contacts
 
-**Frontend (Vercel):** promote the previous deployment. Instant, no build.
-
-**API (Render):** redeploy the previous commit.
-
-> **Migrations do not roll back.** If the bad deploy applied one, rolling back
-> the code leaves the schema ahead. Check `schema_migrations` and decide
-> deliberately — usually forward-fixing is safer than reversing a migration.
-
-## Restoring the database
-
-1. Take the most recent automated backup from the database host.
-2. Restore into a **new** database first, never over the live one.
-3. Verify: row counts on `orders`, and that the newest order matches what
-   customers report.
-4. Repoint `DB_NAME` and restart.
-
-> **This has not been rehearsed yet.** Do it once against a scratch database and
-> record how long it took, before you need it. An untested backup is a hope.
-
-## Rotating a secret
-
-`JWT_SECRET` — rotating it **signs out every customer immediately**, because
-every existing access token fails verification. Acceptable in an incident,
-disruptive otherwise.
-
-`GOOGLE_CLIENT_ID` — must be changed on the frontend and backend **together**.
-A mismatch fails every sign-in with a generic "sign-in failed", which looks
-like a code bug rather than a config one.
-
-`DB_PASSWORD` — change at the database, then on the host, then restart.
-
-`RESEND_API_KEY` — safe to rotate. Email is best-effort; a bad key logs a
-failure and never blocks an order.
-
-All secrets live in the host's env store. **None are in git**, and a committed
-secret is a rotate-everything incident because git history is forever.
-
----
-
-## Things that look broken but are not
-
-**"Randomly signed out."** Refresh tokens rotate on use, and presenting a spent
-one revokes the whole family by design — that is reuse detection working. It
-becomes a bug only if it happens to many customers at once, which would point at
-the shared in-flight refresh in `safeFetch` failing.
-
-**Everything is sold out.** `track_stock` is on for a product with no counted
-stock. Set a real count via `PATCH /api/v1/admin/stock/:productId`, or turn
-tracking off for made-to-order items.
-
-**A customer's discount code "stopped working."** Check `used_count` against
-`usage_limit`, and `discount_redemptions` for a per-user limit already spent.
-
-**Order tracking says not found.** Order numbers exclude I, L, O and U to avoid
-misreading. The API already maps those, but confirm the customer is not reading
-a number from a different order.
-
----
-
-## Who to call
-
-| Area | Contact |
+| Area | Contact to fill before launch |
 |---|---|
-| Hosting (Vercel / Render) | *(fill in)* |
-| Database | *(fill in)* |
-| Domain / DNS | *(fill in)* |
-| Business owner | *(fill in)* |
-
-**Fill these in before you need them.** A runbook with blank contacts fails at
-exactly the moment it is opened.
+| Hostinger/Coolify operator | Pending |
+| Database/backup owner | Pending |
+| Domain/DNS owner | Pending |
+| Business owner | Pending |

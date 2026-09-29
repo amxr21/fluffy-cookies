@@ -10,6 +10,7 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DELETE, GET, PATCH, POST } from "@/app/api/storefront/[...path]/route";
+import { SITE_URL } from "@/lib/site";
 
 const ORIGIN = "http://dashboard.test";
 const KEY = "adk_test_key_never_in_browser";
@@ -32,7 +33,8 @@ async function call(
   init: { body?: string; headers?: Record<string, string>; query?: string } = {}
 ) {
   const url = `http://localhost:3000/api/storefront/${path}${init.query ?? ""}`;
-  const request = new NextRequest(url, { method, headers: init.headers, body: init.body });
+  const origin = process.env.NODE_ENV === "production" ? new URL(SITE_URL).origin : "http://localhost:3000";
+  const request = new NextRequest(url, { method, headers: { ...(method === "GET" ? {} : { origin }), ...init.headers }, body: init.body });
   return HANDLERS[method](request, { params: Promise.resolve({ path: path.split("/") }) });
 }
 
@@ -171,6 +173,16 @@ describe("branch is chosen by the server, never the browser", () => {
     expect(JSON.parse(String(upstreamCall().init.body))).toEqual({ branchId: "branch_main", items: [] });
   });
 
+  it("prices the cart at the server-selected branch with the shopper session", async () => {
+    const response = await call("POST", "orders/quote", {
+      body: JSON.stringify({ branchId: "forged_branch", items: [], discountCode: "SAVE" }),
+      headers: { cookie: `${COOKIE}=customer.jwt` },
+    });
+    expect(response.status).toBe(200);
+    expect(JSON.parse(String(upstreamCall().init.body))).toEqual({ branchId: "branch_main", items: [], discountCode: "SAVE" });
+    expect(upstreamCall().headers.get("authorization")).toBe("Bearer customer.jwt");
+  });
+
   it("uses the dashboard's only selling branch when none is configured", async () => {
     vi.stubEnv("DASHBOARD_BRANCH_ID", "");
     fetchMock
@@ -192,6 +204,30 @@ describe("branch is chosen by the server, never the browser", () => {
 });
 
 describe("checkout retry safety", () => {
+  it.each(["[]", "null", "123", '"body"', "false"])("rejects non-object JSON %s before any upstream call", async (body) => {
+    const response = await call("POST", "orders", { body });
+    expect(response.status).toBe(400);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("caps streamed bodies even without Content-Length", async () => {
+    const response = await call("POST", "cart", { body: JSON.stringify({ message: "x".repeat(65536) }) });
+    expect(response.status).toBe(413);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects oversized Content-Length before consuming the body", async () => {
+    const response = await call("POST", "orders", { body: "{}", headers: { "content-length": "65537" } });
+    expect(response.status).toBe(413);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each(["https://attacker.test", "null", ""])("rejects mutation origin %s including logout", async (origin) => {
+    const response = await call("POST", "auth/logout", { headers: { origin } });
+    expect(response.status).toBe(403);
+    expect(response.headers.get("set-cookie")).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
   it("forwards the browser's Idempotency-Key on checkout", async () => {
     await call("POST", "orders", { body: "{}", headers: { "idempotency-key": "key-1" } });
     expect(upstreamCall().headers.get("idempotency-key")).toBe("key-1");
@@ -247,5 +283,99 @@ describe("failure handling", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(response.headers.get("set-cookie")).toBeNull();
     expect(response.headers.get("x-internal")).toBeNull();
+  });
+});
+
+describe("shopper identity for the dashboard's per-shopper rate limits", () => {
+  it("forwards the proxy's X-Real-IP as X-Storefront-Client-IP", async () => {
+    await call("GET", "config", { headers: { "x-real-ip": "203.0.113.7" } });
+    expect(upstreamCall().headers.get("x-storefront-client-ip")).toBe("203.0.113.7");
+  });
+
+  it("falls back to the LAST X-Forwarded-For entry — the one the proxy appended", async () => {
+    await call("GET", "config", { headers: { "x-forwarded-for": "6.6.6.6, 198.51.100.4" } });
+    expect(upstreamCall().headers.get("x-storefront-client-ip")).toBe("198.51.100.4");
+  });
+
+  it("accepts IPv6", async () => {
+    await call("GET", "config", { headers: { "x-real-ip": "2001:db8::1" } });
+    expect(upstreamCall().headers.get("x-storefront-client-ip")).toBe("2001:db8::1");
+  });
+
+  it("sends nothing when there is no usable address", async () => {
+    await call("GET", "config", { headers: { "x-real-ip": "not-an-ip; drop table" } });
+    expect(upstreamCall().headers.get("x-storefront-client-ip")).toBeNull();
+    fetchMock.mockClear();
+    await call("GET", "config");
+    expect(upstreamCall().headers.get("x-storefront-client-ip")).toBeNull();
+  });
+});
+
+describe("the readable signed-in hint", () => {
+  const cookies = (response: Response) => response.headers.getSetCookie();
+
+  it("is set on sign-in, readable by page script, and site-wide", async () => {
+    fetchMock.mockResolvedValue(upstreamJson({ data: { token: "new.jwt", customer: { id: "c1" } } }));
+    const response = await call("POST", "auth/google", { body: '{"idToken":"google-id-token"}' });
+    const hint = cookies(response).find((c) => c.startsWith("fluffy_signed_in="));
+    expect(hint).toMatch(/^fluffy_signed_in=1;/);
+    expect(hint).toMatch(/Path=\/(;|$)/);
+    expect(hint).not.toMatch(/HttpOnly/i);
+    // …and it is only a hint: the credential stays in the httpOnly cookie.
+    expect(hint).not.toContain("new.jwt");
+  });
+
+  it("is cleared with the session on sign-out", async () => {
+    const response = await call("POST", "auth/logout");
+    const set = cookies(response);
+    expect(set.some((c) => /^fluffy_customer_session=;.*Max-Age=0/i.test(c))).toBe(true);
+    expect(set.some((c) => /^fluffy_signed_in=;.*Max-Age=0/i.test(c))).toBe(true);
+  });
+
+  it("is cleared with the session when the dashboard rejects it", async () => {
+    fetchMock.mockResolvedValue(upstreamJson({ error: { code: "UNAUTHORIZED" } }, 401));
+    const response = await call("GET", "me", { headers: { cookie: `${COOKIE}=expired.jwt` } });
+    expect(response.status).toBe(401);
+    const set = cookies(response);
+    expect(set.some((c) => /^fluffy_customer_session=;/.test(c))).toBe(true);
+    expect(set.some((c) => /^fluffy_signed_in=;/.test(c))).toBe(true);
+  });
+
+  it("leaves a guest's cookies alone on a 401", async () => {
+    fetchMock.mockResolvedValue(upstreamJson({ error: { code: "UNAUTHORIZED" } }, 401));
+    const response = await call("GET", "me");
+    expect(cookies(response)).toEqual([]);
+  });
+});
+
+describe("the Origin check cannot take the shop down", () => {
+  // Production mode: the configured site is https://fluffy.ae (the SITE_URL
+  // fallback), but the shop may also be served on another host.
+  beforeEach(() => vi.stubEnv("NODE_ENV", "production"));
+
+  it("accepts the configured public origin", async () => {
+    const response = await call("POST", "auth/logout", { headers: { origin: "https://fluffy.ae" } });
+    expect(response.status).toBe(200);
+  });
+
+  it("accepts the host the browser actually asked for (www, apex, a preview URL)", async () => {
+    const response = await call("POST", "auth/logout", {
+      headers: { origin: "https://www.shop.test", host: "www.shop.test", "x-forwarded-proto": "https" },
+    });
+    expect(response.status).toBe(200);
+  });
+
+  it("still refuses a cross-site page, even with a forged X-Forwarded-Host", async () => {
+    const response = await call("POST", "auth/logout", {
+      headers: { origin: "https://attacker.test", host: "www.shop.test", "x-forwarded-host": "attacker.test" },
+    });
+    expect(response.status).toBe(403);
+  });
+
+  it("refuses an http origin when the proxy says the site is https", async () => {
+    const response = await call("POST", "auth/logout", {
+      headers: { origin: "http://www.shop.test", host: "www.shop.test", "x-forwarded-proto": "https" },
+    });
+    expect(response.status).toBe(403);
   });
 });

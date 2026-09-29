@@ -10,6 +10,7 @@ import {
 } from "react";
 
 import { dashboardGet, dashboardPost, type DashboardCustomer } from "@/lib/dashboard";
+import { hasSessionHint } from "@/lib/sessionHint";
 
 /**
  * Lazy auth session. The session itself is an httpOnly cookie that only the
@@ -33,6 +34,13 @@ type AuthContextValue = {
   hydrated: boolean;
   login: (user: AuthUser) => void;
   logout: () => Promise<void>;
+  /** True once the dashboard has refused this tab's session, until sign-in. */
+  sessionExpired: boolean;
+  expireSession: () => void;
+  /** The sign-in dialog GoogleLoginButton renders. Held here so a page can
+   *  ask for sign-in itself, as checkout does after an expired session. */
+  signInOpen: boolean;
+  setSignInOpen: (open: boolean) => void;
 };
 
 const AuthContext = createContext<AuthContextValue>({
@@ -41,6 +49,10 @@ const AuthContext = createContext<AuthContextValue>({
   hydrated: false,
   login: () => {},
   logout: async () => {},
+  sessionExpired: false,
+  expireSession: () => {},
+  signInOpen: false,
+  setSignInOpen: () => {},
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -48,6 +60,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
+    // A guest has no session to look up; asking anyway costs a dashboard call
+    // per page view, all of it spent on a 401. See lib/sessionHint.ts.
+    if (!hasSessionHint(document.cookie)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setHydrated(true);
+      return;
+    }
     let active = true;
     void dashboardGet<DashboardCustomer>("/me").then((result) => {
       if (!active) return;
@@ -57,8 +76,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => { active = false; };
   }, []);
 
+  const [sessionExpired, setSessionExpired] = useState(false);
+  const [signInOpen, setSignInOpen] = useState(false);
+
   const login = useCallback((next: AuthUser) => {
     setUser(next);
+    setSessionExpired(false);
   }, []);
 
   const logout = useCallback(async () => {
@@ -66,11 +89,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const result = await dashboardPost<{ success: boolean }>("/auth/logout", {});
     if (!result.ok) throw new Error(result.error.message);
     setUser(null);
+    setSessionExpired(false);
+  }, []);
+
+  /** The dashboard answered 401 for a signed-in shopper. The bridge has
+   *  already cleared the cookies; this signs the page out too, so it asks
+   *  them to sign in again. Their cart is saved to their account, and it
+   *  comes back when they do. */
+  const expireSession = useCallback(() => {
+    setUser(null);
+    setSessionExpired(true);
   }, []);
 
   const value = useMemo(
-    () => ({ user, isAuthenticated: !!user, hydrated, login, logout }),
-    [user, hydrated, login, logout]
+    () => ({ user, isAuthenticated: !!user, hydrated, login, logout, sessionExpired, expireSession, signInOpen, setSignInOpen }),
+    [user, hydrated, login, logout, sessionExpired, expireSession, signInOpen]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

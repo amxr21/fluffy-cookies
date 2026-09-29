@@ -1,127 +1,58 @@
-# Fluffy — launch checklist
+﻿# Fluffy launch checklist
 
-Section C of ECOMMERCE-STANDARD.md. **The store does not go live until every
-line is checked and dated.**
+Record deployed staging evidence and an operator/date for each item. Local tests
+verify code behavior; they do not prove production environment, backup, DNS or
+Google configuration. The production stack is Coolify + admin-dashboard + MySQL;
+the retired Fluffy backend and its tests are not release evidence.
 
-Everything here needs a deployed environment — none of it can be verified from
-the repository, which is why it is the last thing rather than the first.
+## Customer and commercial correctness
 
-Where a test already covers the behaviour, it is named. **A green test is
-evidence the control exists in the code; it is not evidence it works in the
-deployment**, which is a different claim and the one this document is about.
+- [ ] Catalogue and checkout sell from the intended dashboard branch.
+- [ ] A displayed AED 48 product totals AED 48 for pickup with 5% included VAT.
+- [ ] Quote and checkout agree after quantity, discount and delivery-zone changes.
+- [ ] Discounts affect only eligible products/categories, honor limits, and reject consistently.
+- [ ] Approved delivery zones/fees are installed; discounted subtotal AED 150 earns free delivery; below it the selected fee applies.
+- [ ] Pickup, structured delivery address, cash labels and success receipt match the returned order.
+- [ ] Tampered browser prices never change the server-calculated total; price changes are visible before ordering.
+- [ ] Repeated checkout with one Idempotency-Key replays one order; a changed payload conflicts.
+- [ ] Concurrent attempts for the last item create at most one reservation.
+- [ ] Guest cart survives Google sign-in; unavailable/over-limit lines get clear feedback.
+- [ ] All dashboard statuses have deliberate tracker states, including pickup readiness/collection and returns.
+- [ ] Cancellation restores reserved stock and discount use; fulfilled cash orders record payment without charging already-paid orders twice.
+- [ ] Order history/tracking respect ownership/contact verification and expose no private delivery details.
 
----
+## Security and deployment
 
-## Correctness
+- [ ] STOREFRONT-audience key has required public scopes; staff/key-management routes reject it.
+- [ ] API key exists only in Coolify server env; no credentials in source, client bundles, URLs or logs.
+- [ ] Traefik preserves actual shopper identity; exhausting one shopper's budget does not throttle unrelated shoppers.
+- [ ] Invalid keys, Google tokens, tracking guesses and client-error reports are rate limited.
+- [ ] Cross-origin mutations fail; same-origin sign-in/cart/checkout succeed over deployed HTTPS.
+- [ ] Session cookies are HttpOnly, Secure and SameSite=Lax; logout clears session/hint and dashboard revocation is tested.
+- [ ] Oversized/object-invalid bridge bodies are rejected before reaching the dashboard.
+- [ ] User APIs omit passwords, 2FA ciphertext, recovery material and revocation internals.
+- [ ] DNS, TLS, headers and product sitemap work on the canonical storefront domain.
+- [ ] MySQL port is blocked publicly, including the Hostinger firewall.
+- [ ] Real Google account sign-in completes on the authorized public origin.
 
-| Check | Covered by | Verified |
-|---|---|---|
-| A cart POSTed with tampered prices produces a correct charge | `orderPricing.test.js` | ☐ |
-| A non-admin is refused by the API on every admin route | `accessControl.test.js` | ☐ |
-| Order 1042 cannot be read by the wrong user | `accessControl.test.js` | ☐ |
-| Two concurrent checkouts on the last unit → one order, one rejection | `stock.test.js` | ☐ |
-| An expired / over-limit / ineligible discount code is refused | `discounts.test.js` | ☐ |
-| A duplicated webhook produces exactly one payment record | — payments not built | ☐ |
-| A double-clicked "Place order" produces one order | `orderIdempotency.test.js` | ☐ |
+## Experience and operations
 
-## Security — the twelve-attack review
+- [ ] Lint, TypeScript, unit/integration tests and production build pass on final branches.
+- [ ] Production-build Playwright covers public routes, quote/promo flow and 360/768/1440px layouts.
+- [ ] A real mid-tier phone on 4G completes pickup and delivery without sideways scrolling.
+- [ ] Keyboard completes checkout; closed dialogs/menus cannot take focus; reduced motion works.
+- [ ] Contact placeholders, business identity, allergens and policy copy match approved rules.
+- [ ] Dashboard email, where configured, reaches an inbox; SPF/DKIM/DMARC verified.
+- [ ] Coolify health checks hit API /api/v1/health and storefront successfully.
+- [ ] Uptime/error alerts reach an actual operator; optional Sentry/log sink is not assumed configured.
+- [ ] Scheduled MySQL backups exist and one restore was rehearsed with duration recorded.
+- [ ] Runbook contacts and rollback/schema compatibility are reviewed.
+- [ ] Tax/zone/stock-visibility configuration is verified in production after approved migration/seed.
 
-Run each against **staging**, record the date and result. See
-`backend/SECURITY.md` for the full table and what each attack targets.
+## Release evidence
 
-| Check | Verified |
-|---|---|
-| Database not reachable from an arbitrary machine | ☐ |
-| CSRF decision implemented (proxied same-site — see SECURITY.md) | ☐ |
-| **Rate limits verified per-IP, not global** | ☐ |
-| Stored XSS attempted and confirmed contained | ☐ |
-| No secret in git history; all secrets in the host env store | ☐ |
-| `security.txt` published **and the mailbox confirmed to exist** | ☐ |
-
-> **The rate-limit check deserves real attention.** `trust proxy` is set to `1`.
-> On a Vercel-frontend / Render-backend split that is usually right, but if it is
-> wrong every per-IP limit silently becomes global — or a client-supplied
-> `X-Forwarded-For` defeats it entirely. **Verify by hitting a limit from one
-> machine and confirming a second machine is unaffected.** Both failure modes
-> look like a working rate limiter until someone tests them.
-
-## Experience
-
-| Check | Verified |
-|---|---|
-| Every route has loading, empty, no-results, error and unauthorised states | ☐ |
-| Full purchase path works on a real mid-tier phone over 4G | ☐ |
-| Full purchase path is keyboard-navigable end to end | ☐ |
-| Transactional emails land in the inbox, not spam | ☐ |
-
-> **Email needs SPF, DKIM and DMARC on the sending domain before launch.** Mail
-> from an unverified domain lands in spam, and the client blames the site rather
-> than the DNS.
-
-## Operations
-
-| Check | Verified |
-|---|---|
-| CI green: lint, typecheck, test, build, migrations, bundle budget | ☐ |
-| Backups running | ☐ |
-| **One restore actually performed, and the time it took recorded** | ☐ |
-| Uptime monitor hitting `/health`, alerting somewhere a human reads | ☐ |
-| Error tracker receiving events, with a release tagged | ☐ |
-| `RUNBOOK.md` contacts filled in | ☐ |
-| `.env.example` complete for both packages | ☐ |
-
-> **An untested backup is a hope.** Restore once into a scratch database, note
-> how long it took, and write that number in `RUNBOOK.md`. The time to discover a
-> broken backup is not during an incident.
-
-## Legal and commercial
-
-| Check | Verified |
-|---|---|
-| Privacy, Terms, Returns, Delivery and Allergen pages published and **accurate** | ☐ |
-| Real contact details replace the `+971-XXX-XXXX` placeholders | ☐ |
-| Business identity and a contact route visible in the footer | ☐ |
-| Tax invoice generation verified against a real order | ☐ |
-
-> **The policy pages are drafted, not lawyered.** They describe how the system
-> actually behaves — the 24-hour reporting window, free delivery over AED 150,
-> VAT-inclusive pricing, cancellation before baking starts. **Those are business
-> decisions inferred from the code and each needs confirming.**
-
----
-
-## Setting up the monitor
-
-`GET /health` returns:
-
-```json
-{ "status": "ok", "db": "up", "dbLatencyMs": 3,
-  "release": "abc1234", "uptimeSeconds": 8412 }
-```
-
-- Alert on a non-200, or on `status != "ok"`
-- **Check every 60s from at least two regions** — one region flapping is usually
-  the region, not the app
-- Alert to somewhere a human actually reads. An alert nobody sees is not
-  monitoring, and a channel everyone has muted is worse than none
-- `dbLatencyMs` climbing is the early warning; it moves before anything fails
-
-The endpoint is excluded from rate limiting, so a monitor cannot lock itself out.
-
----
-
-## Known gaps at launch
-
-Not blockers, but decide each deliberately rather than discovering them later.
-
-- **Payments are not built.** Cash and card on collection or delivery only.
-  Online card payment is planned (B7), and the UAE tax invoice — TRN, VAT line,
-  sequential numbering — comes with it.
-- **No email verification.** Anyone can type any address at checkout.
-- **CSP allows `unsafe-inline` on scripts.** Removing it needs nonce plumbing
-  through the Next document.
-- **Legacy order numbers are sequential.** Orders placed before migration 004
-  keep `FL1001`-style numbers; the tracking rate limit bounds their exposure
-  until they age out.
-- **No Arabic.** The mechanism is not in place either — this is a UAE storefront,
-  so plan for it rather than treating it as optional.
+Record commit IDs for both repositories, migration/configuration versions, test
+results, staging URLs, operator and date. Production deployment, key replacement
+and live database writes require separate authorization; checking this document
+does not perform or authorize them. Online card payments are not currently a
+storefront feature and must not be claimed as tested.

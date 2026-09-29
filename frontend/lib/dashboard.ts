@@ -41,6 +41,7 @@ export type DashboardCart = {
 export type DashboardOrder = {
   orderNumber: string;
   status: string;
+  fulfillment?: "PICKUP" | "DELIVERY" | null;
   total: string;
   placedAt: string;
   items: { name: string; quantity: number; price: string }[];
@@ -103,7 +104,7 @@ export function dashboardOrderToOrder(order: DashboardOrder): Order {
     totalMinor: decimalToMinor(order.total),
     currency: "AED",
     createdAt: order.placedAt,
-    fulfillment: "",
+    fulfillment: order.fulfillment ?? "",
     items: order.items.map((item, index) => ({
       product_id: String(index),
       name_snapshot: item.name,

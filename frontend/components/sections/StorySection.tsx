@@ -6,7 +6,7 @@ import { Reveal } from "@/components/ui/Reveal";
 
 export function StorySection() {
   return (
-    <section className="px-4 sm:px-8 lg:px-16">
+    <section className="overflow-x-clip px-4 sm:px-8 lg:px-16">
       {/* The card tucks up under the hero, but only once there is enough
           viewport for the overlap to read as design rather than collision —
           below `lg` it simply follows the hero. */}
